@@ -117,9 +117,14 @@ def page_book(book, authors, subjects):
     read_li = ""
     if book.get("read_url"):
         read_li = f'<li><a href="{esc(book["read_url"])}">Read or borrow on Open Library</a></li>'
-    same = [book["ol_url"], book["gutenberg_url"]]
-    if book.get("read_url"):
-        same.append(book["read_url"])
+    # sameAs is the Open Library work and, when present, the Gutenberg landing page.
+    # Borrow links stay in the visible list only.
+    same = [book["ol_url"]]
+    if book.get("gutenberg_url"):
+        same.append(book["gutenberg_url"])
+    for link in same:
+        if "/borrow/" in link:
+            raise SystemExit(f"borrow link in sameAs for {book['slug']}")
     schema = {
         "@context": "https://schema.org",
         "@type": "Book",
@@ -135,8 +140,11 @@ def page_book(book, authors, subjects):
             "value": book["ol_id"],
         },
         "sameAs": same,
-        "url": book["ol_url"],
+        # This catalog page. No host until a real domain exists.
+        "url": "./",
     }
+    if schema["url"] == book["ol_url"] or schema["url"].startswith(("http://", "https://")):
+        raise SystemExit(f"Book.url must stay a relative catalog URL for {book['slug']}")
     if book.get("year"):
         schema["datePublished"] = str(book["year"])
     if book.get("cover_i"):
