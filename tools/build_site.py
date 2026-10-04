@@ -86,7 +86,7 @@ def header(depth):
     return f"""<a class="skip" href="#content">Skip to content</a>
 <header class="topbar">
   <div class="wrap topbar-inner">
-    <a class="brand" href="{prefix}">{brand_svg()}Where to Read</a>
+    <a class="brand" href="{prefix}">{brand_svg()}<span class="brand-word">books<span class="brand-accent">there</span></span></a>
     <button type="button" class="theme-toggle" aria-pressed="false" aria-label="Switch between day paper and night lamp">
       <span class="lamp-dot" aria-hidden="true"></span>
       <span class="theme-toggle-label">Night lamp</span>

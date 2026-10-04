@@ -343,3 +343,6 @@ footer.colophon p { margin: 0 0 8px; }
 .related { list-style: none; padding: 0; margin: 0 0 8px; }
 .related li { padding: 6px 0; border-bottom: 1px solid var(--rule); min-width: 0; overflow-wrap: anywhere; }
 .related a { font-family: var(--display); font-size: 1.15rem; overflow-wrap: anywhere; }
+
+.brand-accent { color: #C04B3A; }
+:root[data-theme="dark"] .brand-accent { color: #F0A394; }
