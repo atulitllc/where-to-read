@@ -385,15 +385,98 @@ def strip_in_title_opener(text, title):
     return rest[0].upper() + rest[1:]
 
 
-# 'published in –', 'written in –71', 'in –14'. Not hyphenated compounds.
+# 'published in –', 'written in –71', 'in -', 'in -14'.
+# An ASCII hyphen counts only as its own dash, so coming-of-age and son-in-law stay.
 PUNCHED_IN_DASH = re.compile(
-    r"\bin\s*[–—−]\s*\d{0,4}(?=\s|[,.;:)]|$)",
+    r"\bin\s*(?:[–—−]|-)\s*\d{0,4}(?=\s|[,.;:)]|$)",
+    re.I,
+)
+BETWEEN_AND = re.compile(r"\bbetween\s+and\b", re.I)
+IN_BY = re.compile(r"\bin\s+by\b", re.I)
+BLANK_YEAR_SPAN = re.compile(
+    rf"\b\d{{1,2}}\s+(?:{MONTHS})\s*[–—−-]\s*\d{{1,2}}\s+(?:{MONTHS})\b"
+    rf"(?!\s*,?\s*(?:1\d{{3}}|20\d{{2}}))",
     re.I,
 )
 
 
 def punched_in_dash(text):
     return bool(PUNCHED_IN_DASH.search(text or ""))
+
+
+def year_hole_reason(text):
+    """A year that was lifted out and left a broken phrase, or None."""
+    raw = text or ""
+    if BETWEEN_AND.search(raw):
+        return "between-and"
+    if IN_BY.search(raw):
+        return "in-by"
+    if BLANK_YEAR_SPAN.search(raw):
+        return "blank-year-span"
+    if punched_in_dash(raw):
+        return "in-dash"
+    return None
+
+
+def repair_year_holes(text):
+    """Delete a year hole. Nothing new is written in."""
+    s = text or ""
+    s = re.sub(
+        rf"\(\s*(?:baptised|baptized)\s+\d{{1,2}}\s+(?:{MONTHS})\s*[–—−-]\s*\d{{1,2}}\s+(?:{MONTHS})\s*\)",
+        "",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(
+        rf"\(\s*\d{{1,2}}\s+(?:{MONTHS})\s*[–—−-]\s*\d{{1,2}}\s+(?:{MONTHS})\s*\)",
+        "",
+        s,
+        flags=re.I,
+    )
+    s = BLANK_YEAR_SPAN.sub("", s)
+    s = re.sub(r"\s+sometime\s+between\s+and\b", "", s, flags=re.I)
+    s = re.sub(r"(?:^|(?<=[.!?]\s))Written\s+between\s+and,\s*", "", s)
+    s = re.sub(r"\s+between\s+and\s*,", ",", s, flags=re.I)
+    s = re.sub(r"\s+between\s+and\b", "", s, flags=re.I)
+    s = re.sub(r"\bin\s+by\b", "by", s, flags=re.I)
+    s = re.sub(r"\s{2,}", " ", s)
+    s = re.sub(r"\s+([,.;:!?])", r"\1", s)
+    s = re.sub(r",\s*\.", ".", s)
+    s = re.sub(r"\(\s*\)", "", s)
+    s = re.sub(r"\s{2,}", " ", s)
+    s = re.sub(r"([.!?]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), s)
+    return s.strip()
+
+
+def title_variants(title):
+    """Titles as they were pasted into a shared sentence, longest first."""
+    title = title or ""
+    found = []
+    candidates = (
+        title,
+        _short_title(title),
+        re.split(r"\s*[:;]| -- | — | – ", title, maxsplit=1)[0],
+        re.sub(r"\s*[—–-]\s*(Complete|Volume\b.*)$", "", title, flags=re.I),
+        re.sub(r",?\s+Vol(?:ume|\.)\s+.*$", "", title, flags=re.I),
+        re.sub(r",?\s+Part\s+\d+.*$", "", title, flags=re.I),
+        re.sub(r",?\s+Chapters\s+.*$", "", title, flags=re.I),
+    )
+    for candidate in candidates:
+        candidate = _apos(candidate).strip(" ,;.-")
+        if len(candidate) < 8:
+            continue
+        if candidate.lower() not in {item.lower() for item in found}:
+            found.append(candidate)
+    found.sort(key=len, reverse=True)
+    return found
+
+
+def blurb_without_title(text, title):
+    """The note with this book's title replaced, so pasted copies compare equal."""
+    body = _apos(text or "")
+    for variant in title_variants(title):
+        body = re.sub(re.escape(variant), " TITLE ", body, flags=re.I)
+    return re.sub(r"\s+", " ", body).strip()
 
 
 def repair_punched_in_dash(text):
@@ -680,7 +763,7 @@ def broken_extract(text, title, author=""):
         return False
     if (
         in_title_rest(raw, title) is not None
-        or punched_in_dash(raw)
+        or year_hole_reason(raw)
         or ripped_month_day(raw)
         or verbless_in_title(raw, title)
         or participle_fragment(raw, title)
@@ -717,8 +800,9 @@ def check_blurb(text, slug, featured=False, title="", author=""):
         return
     if in_title_rest(text, title) is not None:
         raise SystemExit(f"in-title extract in {slug}")
-    if punched_in_dash(text):
-        raise SystemExit(f"year punched out as in-dash in {slug}")
+    hole = year_hole_reason(text)
+    if hole:
+        raise SystemExit(f"year hole in {slug}: {hole}")
     if verbless_in_title(text, title):
         raise SystemExit(f"verbless extract in {slug}")
     if ripped_month_day(text):
@@ -773,15 +857,24 @@ def _volume_rank(book):
 def check_duplicate_blurbs(catalog):
     """Identical non-featured notes on more than one book fail the build."""
     groups = {}
+    slotted = {}
     for book in catalog["books"]:
         text = (book.get("blurb") or "").strip()
         if not text or book.get("featured"):
             continue
-        groups.setdefault(text, []).append(book.get("slug") or "?")
+        slug = book.get("slug") or "?"
+        groups.setdefault(text, []).append(slug)
+        key = blurb_without_title(text, book.get("title") or "")
+        slotted.setdefault(key, []).append(slug)
     for slugs in groups.values():
         if len(slugs) > 1:
             raise SystemExit(
                 f"identical blurb on {len(slugs)} books, including {slugs[0]}"
+            )
+    for slugs in slotted.values():
+        if len(slugs) > 1:
+            raise SystemExit(
+                f"title-slot blurb on {len(slugs)} books, including {slugs[0]}"
             )
 
 
@@ -904,6 +997,67 @@ def scrub_catalog(catalog):
         for extra in copies[1:]:
             extra["blurb"] = ""
             stats["dupes_emptied"] += 1
+    for book in catalog["books"]:
+        if book.get("featured") and book.get("blurb") != featured_before[book["slug"]]:
+            raise SystemExit(f"featured blurb changed: {book['slug']}")
+    return stats
+
+
+def scrub_year_holes_and_title_slots(catalog):
+    """Delete year holes, then empty pasted copies that differ only by title.
+
+    Does not write a new sentence. One copy of a shared note may stay.
+    Featured notes are left as stored.
+    """
+    stats = {
+        "year_repaired": 0,
+        "year_dropped": 0,
+        "title_slot_groups": 0,
+        "title_slots_emptied": 0,
+    }
+    featured_before = {
+        b["slug"]: b.get("blurb") for b in catalog["books"] if b.get("featured")
+    }
+    for book in catalog["books"]:
+        if book.get("featured"):
+            continue
+        original = (book.get("blurb") or "").strip()
+        if not original or not year_hole_reason(original):
+            continue
+        title = book.get("title") or ""
+        cleaned = repair_year_holes(original)
+        if punched_in_dash(cleaned):
+            cleaned = repair_punched_in_dash(cleaned)
+        broken = (
+            not cleaned
+            or year_hole_reason(cleaned)
+            or len(cleaned) < 40
+            or not has_finite_verb(cleaned)
+            or in_title_rest(cleaned, title) is not None
+            or scrap_topic(cleaned)
+            or cutoff_fragment(cleaned)
+        )
+        if broken:
+            book["blurb"] = ""
+            stats["year_dropped"] += 1
+            continue
+        book["blurb"] = cleaned
+        stats["year_repaired"] += 1
+    groups = {}
+    for book in catalog["books"]:
+        text = (book.get("blurb") or "").strip()
+        if not text or book.get("featured"):
+            continue
+        key = blurb_without_title(text, book.get("title") or "")
+        groups.setdefault(key, []).append(book)
+    for copies in groups.values():
+        if len(copies) < 2:
+            continue
+        stats["title_slot_groups"] += 1
+        copies.sort(key=_volume_rank)
+        for extra in copies[1:]:
+            extra["blurb"] = ""
+            stats["title_slots_emptied"] += 1
     for book in catalog["books"]:
         if book.get("featured") and book.get("blurb") != featured_before[book["slug"]]:
             raise SystemExit(f"featured blurb changed: {book['slug']}")
