@@ -16,7 +16,7 @@ import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
-from blurbs import make_blurb
+from blurbs import apply_blurbs
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "data" / "catalog.json"
@@ -294,9 +294,9 @@ def main():
                 rec["author_death"] = people[0][2]
         if rec.get("year") == 1800:
             rec["year"] = None
-        # Handwritten blurbs are the original featured set. Everything else is regenerated.
+        # Handwritten blurbs are the original featured set. Others are filled below.
         if not b.get("featured"):
-            rec["blurb"] = make_blurb(rec, subject_names)
+            rec["blurb"] = ""
         chosen.append(rec)
 
     for b in existing["books"]:
@@ -365,7 +365,7 @@ def main():
                 book["year"] = max(set(years), key=years.count)
         if book.get("year") == 1800:
             book["year"] = None
-        book["blurb"] = make_blurb(book, subject_names)
+        book["blurb"] = ""
         chosen.append(book)
         seen_pg.add(pg)
 
@@ -454,6 +454,7 @@ def main():
                 if b.get("author_death"):
                     a["death"] = b.get("author_death")
                 break
+    apply_blurbs(chosen, subject_names)
     books_out = []
     for b in chosen:
         books_out.append({k: v for k, v in b.items() if k != "author_name" or True})
