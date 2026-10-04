@@ -14,8 +14,7 @@ Option B: books stacked into a doorway, a small reader in the arch, a skyline of
 | Ink / books | `#1A3054` | Covers, skyline spines, reader |
 | Page | `#F3EEE4` | Top-book pages, page rules, doorway |
 | Bookmark | `#C04B3A` | Ribbon with a notched end |
-| Wordmark | `#1A3054` | “books” |
-| Accent | `#C04B3A` | “there”, bookmark red |
+| Wordmark | `#1A3054` | “Where to Read”, one color |
 | Paper (recommended ground) | `#F6F1E7` | Preview only; SVGs are transparent |
 
 Wordmark is EB Garamond, the site’s display face.
