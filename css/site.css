@@ -68,10 +68,13 @@ button { font: inherit; color: inherit; }
   position: sticky;
   top: 0;
   z-index: 5;
-  background: color-mix(in srgb, var(--paper) 88%, transparent);
-  backdrop-filter: blur(8px);
+  background: #f4efe4;
   border-bottom: 1px solid var(--rule);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+:root[data-theme="dark"] .topbar {
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  backdrop-filter: blur(8px);
 }
 .topbar-inner {
   display: flex;
@@ -92,6 +95,16 @@ button { font: inherit; color: inherit; }
   font-weight: 600;
   letter-spacing: -0.06em;
   line-height: 1;
+}
+.brand-word {
+  display: inline-block;
+  font-size: clamp(1.25rem, 2.7vw, 1.55rem);
+  width: 2.45em;
+  font-stretch: extra-condensed;
+  letter-spacing: -0.08em;
+  white-space: nowrap;
+  transform: scaleX(0.62);
+  transform-origin: left center;
 }
 .brand svg { flex: none; }
 .brand-mark .bk { fill: #1A3054; }
@@ -384,3 +397,6 @@ footer.colophon p { margin: 0 0 8px; }
 }
 .find-results a { font-family: var(--display); font-size: 1.15rem; }
 .find-results span { color: var(--ink-soft); }
+
+.brand-accent { color: #C04B3A; }
+:root[data-theme="dark"] .brand-accent { color: #F0A394; }
