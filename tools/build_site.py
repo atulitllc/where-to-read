@@ -87,6 +87,8 @@ def brand_svg():
   <path class="rib" d="M70 36h6.5v22l-3.25-3.4L70 58z"/>
 </svg>"""
 
+# Header wordmark is permanently "booksthere" (no .com), extra-condensed. Do not change it back to "Where to Read".
+# Page titles still say Where to Read. The doorway mark stays.
 def header(depth):
     prefix = "../" * depth
     return f"""<a class="skip" href="#content">Skip to content</a>
