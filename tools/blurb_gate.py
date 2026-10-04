@@ -102,6 +102,100 @@ CATALOG_ID = re.compile(
     r"\bOL\d+W\b|\b(open library|wikipedia|booksthere\.com|project gutenberg)\b",
     re.I,
 )
+MONTHS = (
+    "January|February|March|April|May|June|July|August|"
+    "September|October|November|December"
+)
+# Past participles and -ed adjectives that do not make a sentence on their own.
+_ED_NOT_FINITE = {
+    "illustrated", "gathered", "based", "titled", "entitled", "called", "named",
+    "known", "written", "starred", "famed", "alleged", "detailed", "related",
+    "noted", "celebrated", "renowned", "united", "supposed", "sacred", "wicked",
+    "naked", "aged", "beloved", "armed", "wounded", "unexpected", "distinguished",
+    "unfinished", "unrecognized", "limited", "hundred", "kindred", "wretched",
+    "rugged", "learned", "blessed", "cursed", "concerned", "tired", "inspired",
+    "determined", "complicated", "interested", "advanced", "marked", "mixed",
+    "fixed", "closed", "supposed", "so-called", "so called", "untitled",
+}
+_AUX = re.compile(
+    r"\b(is|are|was|were|be|been|being|am|has|have|had|do|does|did|"
+    r"will|would|can|could|may|might|shall|should|must)\b",
+    re.I,
+)
+_FINITE = re.compile(
+    r"\b("
+    r"says|said|tells|told|writes|wrote|goes|went|comes|came|becomes|became|"
+    r"sees|saw|makes|made|takes|took|gives|gave|gets|got|finds|found|"
+    r"leaves|left|keeps|kept|knows|knew|thinks|thought|feels|felt|"
+    r"begins|began|brings|brought|runs|ran|stands|stood|grows|grew|"
+    r"hears|heard|leads|led|loses|lost|meets|met|pays|paid|reads|"
+    r"sends|sent|speaks|spoke|teaches|taught|wins|won|draws|drew|"
+    r"falls|fell|rises|rose|sits|sat|holds|held|lets|means|meant|"
+    r"seems|appears|includes|contains|follows|describes|concerns|"
+    r"opens|presents|offers|shows|features|focuses|covers|spans|"
+    r"records|relates|introduces|uses|argues|claims|explains|defines|"
+    r"discusses|surveys|outlines|remains|serves|lives|dies|died|"
+    r"parodies|credits|stars|disappears|assembles|derives|alleges|allege|"
+    r"comprises|reflects|refers|recounts|recount|depicts|portrays|narrates|"
+    r"chronicles|traces|explores|examines|combines|publishes|collects|"
+    r"translates|adapts|calls|considers|regards|defends|attempts|"
+    r"wishes|earns|produces|attributes|looks|arises|builds|built|creates|"
+    r"forms|centres|centers|revolves|deals|dealt|turns|turned|"
+    r"continues|receives|returns|marries|visits|sails|fights|fought|"
+    r"grapples|entices|enticed|converts|preaches|develops|compiles|"
+    r"take|takes|reacquaints|re-acquaints|put|puts|set|sets|"
+    r"say|tell|write|go|come|see|make|give|get|find|leave|keep|know|"
+    r"think|feel|begin|bring|run|stand|grow|hear|lead|lose|meet|pay|"
+    r"send|speak|teach|win|draw|fall|rise|sit|hold|let|mean|seem|"
+    r"appear|include|contain|follow|describe|concern|open|present|"
+    r"offer|show|feature|focus|cover|span|record|relate|introduce|"
+    r"use|argue|claim|explain|define|discuss|survey|outline|remain|"
+    r"serve|live|die|parody|credit|star|disappear|assemble|derive|"
+    r"comprise|reflect|refer|depict|portray|narrate|chronicle|trace|"
+    r"explore|examine|combine|publish|collect|translate|adapt|call|"
+    r"consider|regard|defend|attempt|wish|earn|produce|attribute|"
+    r"look|arise|build|create|form|revolve|deal|turn|continue|"
+    r"receive|return|marry|visit|sail|fight|grapple|entice|convert|"
+    r"preach|develop|compile"
+    r")\b",
+    re.I,
+)
+_FILM_SUBJECT = re.compile(
+    r"\b(?:"
+    r"is an? (?:[\w,'’-]{1,24}\s+){0,10}(?:silent |sound |theatrical |animated |drama )?film\b"
+    r"|the film (?:stars|follows|mixes|includes|received|became|was)"
+    r"|in the film\b"
+    r"|the movie (?:is|was|stars)"
+    r"|feature films?(?: and TV specials)?"
+    r"|TV specials"
+    r"|home video"
+    r"|Academy Awards"
+    r"|box-office|box office"
+    r"|Terminator film"
+    r"|Saturday Night Live"
+    r"|animated comedy series"
+    r"|television programme"
+    r"|Paramount Pictures"
+    r"|the Muppets"
+    r"|\band starring\b"
+    r")",
+    re.I,
+)
+_BIO_LEAD = re.compile(
+    r"\b([A-Z][\w.'’-]{1,24}(?:\s+[A-Z][\w.'’-]{1,24}){0,5})\s+was an?\s+"
+    r"(?:[\w,\"'’-]{1,24}\s+){0,12}"
+    r"(writer|novelist|poet|essayist|historian|biographer|diplomat|author|"
+    r"playwright|philosopher|statesman|politician|scientist|explorer|"
+    r"composer|painter|soldier|general|clergyman|journalist|orator)\b"
+)
+_LIST_NOTE = re.compile(r"\bthis is a list of\b|\bthis list compiles\b", re.I)
+_NON_ENGLISH = re.compile(
+    r"\b(fábulas|cuentos|el tercer libro|publicado por primera|conjunto de)\b",
+    re.I,
+)
+_ANACHRONISM = re.compile(
+    r"\b(CIA|KGB|Mafia|Lyndon B\.|Schwarzenegger)\b"
+)
 
 
 def _folded(text):
@@ -191,12 +285,271 @@ def subject_heading_frame(text, title, author=""):
     return False
 
 
+def _apos(text):
+    return (text or "").replace("’", "'").replace("‘", "'").replace("`", "'")
+
+
+def _short_title(title):
+    text = re.sub(r"\s*[—–-]\s*(Complete|Volume\b.*)$", "", title or "", flags=re.I)
+    text = re.sub(r",?\s+Vol(?:ume|\.)\s+.*$", "", text, flags=re.I)
+    text = text.strip(" ,;—–-")
+    if len(text) > 140:
+        text = text[:137].rsplit(" ", 1)[0]
+    return text or (title or "")[:80]
+
+
+def in_title_rest(text, title):
+    """Text after 'In {Title},' when the note is that extract frame. Else None."""
+    raw = (text or "").strip()
+    if not raw.lower().startswith("in "):
+        return None
+    titles = []
+    for candidate in (
+        title or "",
+        _short_title(title),
+        re.split(r"\s*[:;]| -- | — | – ", title or "", maxsplit=1)[0],
+    ):
+        candidate = candidate.strip()
+        if candidate and candidate not in titles:
+            titles.append(candidate)
+    titles.sort(key=len, reverse=True)
+    hay = _apos(raw)
+    for candidate in titles:
+        prefix = "In " + _apos(candidate)
+        if hay.lower().startswith(prefix.lower()):
+            rest = hay[len(prefix):].lstrip()
+            if rest.startswith(","):
+                return rest[1:].strip()
+            return None
+    return None
+
+
+def has_finite_verb(text):
+    if _AUX.search(text or "") or _FINITE.search(text or ""):
+        return True
+    for word in re.findall(r"[A-Za-z][A-Za-z'-]{4,}", text or ""):
+        low = word.lower()
+        # "edited" is 6 letters; "{5,}ed" would require 7 and miss it.
+        if re.fullmatch(r"[a-z]{4,}ed", low) and low not in _ED_NOT_FINITE:
+            return True
+    return False
+
+
+def verbless_in_title(text, title):
+    """'In {Title},' followed by a fragment that never gets a verb."""
+    rest = in_title_rest(text, title)
+    if rest is None:
+        return False
+    return not has_finite_verb(rest)
+
+
+def _month_day(label="day"):
+    span = r"\d{1,2}(?:\s*[–—-]\s*\d{1,2})?"
+    return rf"(?:{MONTHS})\s+{span}"
+
+
+def ripped_month_day(text):
+    """A month and day left behind after the year was removed."""
+    raw = text or ""
+    day = _month_day()
+    patterns = (
+        rf"\(\s*(?:c\.?\s*)?(?:[–—-]\s*)?(?:around\s+)?{day}\s*,\s*\)",
+        rf"\bon\s+{day}\s*,(?!\s*(?:1\d{{3}}|20\d{{2}}))(?=\s*(?:in|and|as|at)\b)",
+        rf"\bof\s+{day}\s*,(?!\s*(?:1\d{{3}}|20\d{{2}})\b)(?=\s*(?:as|in|and)\b)",
+        rf"\b(?:on\s+)?{day}\s+and\s+\d{{1,2}}\s*,\s*\.",
+        rf"\bfrom\s+{day}\s+to\s*\.",
+        rf"\]\s*[–—-]\s*{day}\s*,\s*\)",
+        rf"\baround\s+{day}\s*,\s*\)",
+        rf"(?:^|[,(]\s*)[–—-]\s*{day}\s*,\s*\)",
+        # "October 7, in New York" — day, comma, preposition, no year.
+        rf"\b{day}\s*,\s+in\b(?!\s*(?:1\d{{3}}|20\d{{2}}))",
+    )
+    return any(re.search(pat, raw, re.I) for pat in patterns)
+
+
+def repair_ripped_dates(text):
+    """Delete a month-day, or a month range, whose year was already removed.
+
+    The words around it stay. Nothing new is written in.
+    """
+    s = text or ""
+    day = _month_day()
+    # Strip these before date cleanup, while the parentheses are still closed.
+    s = re.sub(r"\s*\((?:[A-Z][a-z]+ )?pronunciation:[^)]*\)", "", s, flags=re.I)
+    s = re.sub(r"\s*\(\[[^\]]{1,80}\]\s*\)", "", s)
+    s = re.sub(rf"\([^)]{{0,80}}[–—-]\s*{day}\s*,\s*\)", "", s, flags=re.I)
+    s = re.sub(rf"\(\s*(?:c\.?\s*)?(?:[–—-]\s*)?(?:around\s+)?{day}\s*,\s*\)", "", s, flags=re.I)
+    s = re.sub(rf"\(\s*locally\s*\)", "", s, flags=re.I)
+    s = re.sub(rf"\d{{1,2}}\s+(?:{MONTHS})\s*\]\s*[–—-]\s*{day}\s*,\s*\)", "", s, flags=re.I)
+    s = re.sub(rf"\]\s*[–—-]\s*{day}\s*,\s*\)", "", s, flags=re.I)
+    s = re.sub(rf"(?:^|\s)[–—-]\s*{day}\s*,\s*\)", " ", s, flags=re.I)
+    s = re.sub(rf"\baround\s+{day}\s*,\s*\)", "", s, flags=re.I)
+    s = re.sub(
+        rf"\bon\s+{day}\s*,(?!\s*(?:1\d{{3}}|20\d{{2}}))(?=\s*(?:in|and|as|at)\b)",
+        "",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(
+        rf"\bof\s+{day}\s*,(?!\s*(?:1\d{{3}}|20\d{{2}})\b)(?=\s*(?:as|in|and)\b)",
+        "",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(rf"\bon\s+{day}\s+and\s+\d{{1,2}}\s*,\s*\.", ".", s, flags=re.I)
+    s = re.sub(rf"\b{day}\s+and\s+\d{{1,2}}\s*,\s*\.", ".", s, flags=re.I)
+    s = re.sub(rf"\bfrom\s+{day}\s+to\s*\.", ".", s, flags=re.I)
+    s = re.sub(rf"\b{day}\s*,\s+in\b(?!\s*(?:1\d{{3}}|20\d{{2}}))", "in", s, flags=re.I)
+    # "from March to November" — both years were removed, no day left.
+    s = re.sub(
+        rf"\bfrom\s+(?:{MONTHS})\s+to\s+(?:{MONTHS})\b",
+        "",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(
+        r"\b(published|produced|released|appeared|printed)\s+in\s+by\b",
+        r"\1 by",
+        s,
+        flags=re.I,
+    )
+    # "In – she held" is a year that was lifted out of the sentence.
+    s = re.sub(r"\bIn\s+[–—-]\s+", "", s)
+    s = re.sub(r"\(\s*\)", "", s)
+    s = re.sub(r"\(\s*,\s*", "(", s)
+    s = re.sub(r"\s{2,}", " ", s)
+    s = re.sub(r"\s+([,.;:!?])", r"\1", s)
+    s = re.sub(r",\s*,+", ",", s)
+    s = re.sub(r"\(\s*,", "(", s)
+    s = re.sub(r"\s+,", ",", s)
+    s = re.sub(r",\s+\.", ".", s)
+    s = re.sub(r"\s{2,}", " ", s)
+    s = re.sub(r"([.!?]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), s)
+    return s.strip()
+
+
+_GENERIC_NAME = {
+    "christmas", "christian", "american", "english", "french", "german",
+    "history", "church", "children", "ancient", "modern", "great", "little",
+}
+
+
+def _person_named(person, title, author=""):
+    """True when this person's name is the book or the author, not a stranger."""
+    parts = [p for p in _folded(person).split() if len(p) >= 3]
+    if not parts:
+        return False
+    blob = set(_folded(f"{title} {author}").split())
+    hits = sum(1 for p in parts if p in blob)
+    return hits >= min(2, len(parts)) or (len(parts) == 1 and hits == 1)
+
+
+def off_topic_reason(text, title, author=""):
+    """Why an extract is about the wrong thing, or None when it may stay."""
+    raw = text or ""
+    if _FILM_SUBJECT.search(raw):
+        if not re.search(r"\b(film|cinema|movies?)\b", title or "", re.I):
+            return "film"
+    if _LIST_NOTE.search(raw):
+        return "list"
+    if _NON_ENGLISH.search(raw):
+        return "non-english"
+    if _ANACHRONISM.search(raw):
+        return "anachronism"
+    if re.search(r"\bpronunciation\s*:", raw, re.I):
+        return "pronunciation"
+    if re.search(r",\s+was born\b|\(\s*or\s+was\b", raw):
+        return "missing-subject"
+    rest = in_title_rest(raw, title)
+    if rest and re.match(r"^(?:was|were|is)\b", rest, re.I):
+        return "missing-subject"
+    shifted = in_title_rest(raw, title)
+    if shifted:
+        head = re.sub(r"\([^)]*\)", " ", shifted)
+        head = re.sub(r"\s{2,}", " ", head).strip()
+        other = re.match(r"^([A-Z][^,]{3,80}), also known as\b", head)
+        if other:
+            words = [w for w in _folded(other.group(1)).split() if len(w) >= 4]
+            title_words = set(_folded(title).split())
+            distinctive = [w for w in words if w not in _GENERIC_NAME]
+            pool = distinctive or words
+            if pool and not any(w in title_words for w in pool):
+                return "shifted-subject"
+    bio = _BIO_LEAD.search(raw)
+    if bio:
+        if not _person_named(bio.group(1), title, author):
+            return "wrong-person"
+        if re.search(r"\b(romance|novel)\b", title or "", re.I) and not re.search(
+            r"\b(novel|romance|story|poem|fiction)\b", raw, re.I
+        ):
+            return "person-not-book"
+        if re.search(rf"\bwith\s+{re.escape(bio.group(1))}\b", title or ""):
+            return "person-not-book"
+    return None
+
+
+def participle_fragment(text, title):
+    """'In {Title}, Name, published by …' with no finite clause."""
+    rest = in_title_rest(text, title)
+    if not rest or _AUX.search(rest):
+        return False
+    first = re.split(r"(?<=[.!?])\s+", rest)[0]
+    return bool(re.match(
+        r"^(?:[A-Z][\w.'’-]{1,24}(?:\s+[A-Z][\w.'’-]{1,24}){0,4}),\s+"
+        r"(?:published|illustrated|gathered|released)\b",
+        first,
+    ))
+
+
+def broken_extract(text, title, author=""):
+    """True when the note is a fragment, a ripped date, or the wrong subject."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    if (
+        ripped_month_day(raw)
+        or verbless_in_title(raw, title)
+        or participle_fragment(raw, title)
+        or off_topic_reason(raw, title, author)
+    ):
+        return True
+    return False
+
+
+def scrub_blurb(text, title, featured=False, author=""):
+    """Return (note, action). action is keep, fix, or drop.
+
+    A featured handwritten note is left as stored. A broken extract is repaired
+    only by deleting the damaged date; if that still fails, the note is emptied.
+    """
+    original = (text or "").strip()
+    if featured or not original:
+        return original, "keep"
+    repaired = repair_ripped_dates(original)
+    if broken_extract(repaired, title, author):
+        return "", "drop"
+    if repaired != original:
+        if len(repaired) < 40 or not has_finite_verb(repaired):
+            return "", "drop"
+        return repaired, "fix"
+    return original, "keep"
+
+
 def check_blurb(text, slug, featured=False, title="", author=""):
     text = (text or "").strip()
     if not text:
         if featured:
             raise SystemExit(f"missing featured blurb: {slug}")
         return
+    if verbless_in_title(text, title):
+        raise SystemExit(f"verbless extract in {slug}")
+    if ripped_month_day(text):
+        raise SystemExit(f"month-day with year removed in {slug}")
+    reason = off_topic_reason(text, title, author)
+    if reason:
+        raise SystemExit(f"off-topic extract in {slug}: {reason}")
+    if participle_fragment(text, title):
+        raise SystemExit(f"verbless extract in {slug}")
     if wrote_frame(text, title):
         raise SystemExit(f"wrote frame in {slug}")
     if subject_heading_frame(text, title, author):

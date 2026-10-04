@@ -10,7 +10,13 @@ from blurb_gate import check_catalog
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "data" / "catalog.json"
 BRAND = "Where to Read"
+# Every page stays noindex while the catalog is on github.io.
+# Empty-blurb book pages also pass thin=True, so they stay noindex on their own.
+SITEWIDE_NOINDEX = True
 FORBIDDEN = re.compile(r"\b(pdf|epub|mobi|download|free ebook)\b", re.I)
+
+def has_note(book):
+    return bool((book.get("blurb") or "").strip())
 
 def esc(s):
     return html.escape(s if s is not None else "", quote=True)
@@ -32,15 +38,20 @@ try {
 } catch (e) {}
 </script>"""
 
-def head(title, description, depth, extra=""):
+def head(title, description, depth, extra="", thin=False):
     prefix = "../" * depth
-    # non-PD titles stay noindex even later; every page is noindex on github.io
+    # Sitewide noindex stays. An empty-blurb book page is noindex on its own,
+    # so the tag remains if the sitewide flag is later turned off.
+    robots = ""
+    if SITEWIDE_NOINDEX or thin:
+        robots = '<meta name="robots" content="noindex">'
+    thin_mark = "<!-- empty-blurb noindex -->\n" if thin else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
+{thin_mark}{robots}
 <link rel="canonical" href="./">
 <title>{esc(title)}</title>
 <meta name="description" content="{esc(description)}">
@@ -220,9 +231,12 @@ def page_book(book, authors, subjects, by_author, by_subject):
     if book.get("cover_i"):
         schema["image"] = f"https://covers.openlibrary.org/b/id/{book['cover_i']}-L.jpg"
     extra = '<script type="application/ld+json">' + json.dumps(schema, ensure_ascii=False).replace("<", "\\u003c") + "</script>"
-    same_author = pick_related(book, by_author.get(book["author"], []))
+    same_author = pick_related(book, [b for b in by_author.get(book["author"], []) if has_note(b)])
     primary = book["subjects"][0]
-    same_subject = pick_related(book, [b for b in by_subject.get(primary, []) if b["author"] != book["author"]])
+    same_subject = pick_related(
+        book,
+        [b for b in by_subject.get(primary, []) if b["author"] != book["author"] and has_note(b)],
+    )
     related_parts = []
     if same_author:
         related_parts.append(
@@ -240,7 +254,7 @@ def page_book(book, authors, subjects, by_author, by_subject):
         if (book.get("blurb") or "").strip()
         else ""
     )
-    body = f"""{head(title, desc, depth, extra)}
+    body = f"""{head(title, desc, depth, extra, thin=not has_note(book))}
 <body>
 {header(depth)}
 <main id="content" class="wrap detail-wrap">
@@ -286,7 +300,9 @@ def page_author(author, books, subjects):
     prefix = "../../"
     title = f"{author['name']} | {BRAND}"
     desc = f"Public-domain books by {author['name']} in this catalog. Read them on Open Library. This site does not host copyrighted books."
-    rails = home_rails(books, {author["slug"]: author}, subjects, prefix=prefix)
+    listed = [b for b in books if has_note(b)]
+    rails = home_rails(listed, {author["slug"]: author}, subjects, prefix=prefix)
+    shelf = f'<hr class="rule">\n  <div class="shelf">{rails}</div>' if listed else ""
     body = f"""{head(title, desc, depth)}
 <body>
 {header(depth)}
@@ -295,8 +311,7 @@ def page_author(author, books, subjects):
   <p class="kicker">Author</p>
   <h1>{esc(author['name'])}</h1>
   <p class="lede">{esc(author['intro'])}</p>
-  <hr class="rule">
-  <div class="shelf">{rails}</div>
+  {shelf}
 </main>
 {footer(depth)}
 """
@@ -307,7 +322,9 @@ def page_subject(subject, books, authors, subjects):
     prefix = "../../"
     title = f"{subject['name']} books | {BRAND}"
     desc = f"Public-domain {subject['name'].lower()} books in this catalog. Read them on Open Library. This site does not host copyrighted books."
-    rails = home_rails(books, authors, subjects, prefix=prefix)
+    listed = [b for b in books if has_note(b)]
+    rails = home_rails(listed, authors, subjects, prefix=prefix)
+    shelf = f'<hr class="rule">\n  <div class="shelf">{rails}</div>' if listed else ""
     body = f"""{head(title, desc, depth)}
 <body>
 {header(depth)}
@@ -316,8 +333,7 @@ def page_subject(subject, books, authors, subjects):
   <p class="kicker">Subject</p>
   <h1>{esc(subject['name'])}</h1>
   <p class="lede">{esc(subject['intro'])}</p>
-  <hr class="rule">
-  <div class="shelf">{rails}</div>
+  {shelf}
 </main>
 {footer(depth)}
 """
@@ -393,7 +409,7 @@ def pick_books(books, seeds, limit, subject=None, skip=()):
     seen = set(skip)
     for slug in seeds:
         b = found.get(slug)
-        if not b or slug in seen:
+        if not b or slug in seen or not has_note(b):
             continue
         if subject and subject not in b["subjects"]:
             continue
@@ -401,7 +417,7 @@ def pick_books(books, seeds, limit, subject=None, skip=()):
         seen.add(slug)
         if len(chosen) == limit:
             return chosen
-    pool = [b for b in books if b["slug"] not in seen and (not subject or subject in b["subjects"])]
+    pool = [b for b in books if has_note(b) and b["slug"] not in seen and (not subject or subject in b["subjects"])]
     pool.sort(key=lambda b: (0 if b.get("featured") else 1, 0 if b.get("cover_i") else 1, len(b["title"]), b["title"].lower()))
     for b in pool:
         chosen.append(b)
@@ -457,7 +473,7 @@ def page_home(catalog, authors, subjects):
 {footer(depth)}
 """
     write(ROOT / "index.html", body)
-    rows = [{"t": b["title"], "a": authors[b["author"]]["name"], "s": b["slug"]} for b in books]
+    rows = [{"t": b["title"], "a": authors[b["author"]]["name"], "s": b["slug"]} for b in books if has_note(b)]
     (ROOT / "search.json").write_text(json.dumps(rows, ensure_ascii=False, separators=(",", ":")))
     print("HOME", body.count('class="card"'), "cards")
 
@@ -476,7 +492,7 @@ def page_about():
   <h2 class="shelf-label">What you will not find here</h2>
   <p>No ebook files, and no copy of a copyrighted book. Each title links out to its Open Library work and, when there is a landing page, to Project Gutenberg. Those links leave this site.</p>
   <h2 class="shelf-label">Where the facts come from</h2>
-  <p>The title, the author, and any year printed on a card come from the catalog record. A year is shown only when that record already has one, and never past 1928. A featured book keeps a handwritten note. Any other note is a sentence rewritten from a public description of that book. Where no such description was found, the card has no note. Notes do not carry catalog ids.</p>
+  <p>The title, the author, and any year printed on a card come from the catalog record. A year is shown only when that record already has one, and never past 1928. A featured book keeps a handwritten note. Any other note is a sentence rewritten from a public description of that book. Where no such description was found, the card has no note: that book page is noindex on its own, and the title is left off the author and subject shelves. Notes do not carry catalog ids.</p>
   <h2 class="shelf-label">Covers and indexing</h2>
   <p>Cover images, when a record has one, are loaded from covers.openlibrary.org. They are not stored here. Every page sends a noindex robots tag and a relative canonical URL of <code>./</code>.</p>
 </main>

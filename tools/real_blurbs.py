@@ -654,7 +654,8 @@ def repair_punched_dates(text):
     s = re.sub(r"\s+([,.;])", r"\1", s)
     s = re.sub(r"\(\s*,", "(", s)
     s = re.sub(r"([.!?]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), s)
-    return s.strip()
+    from blurb_gate import repair_ripped_dates
+    return repair_ripped_dates(s.strip())
 
 
 def ol_description(rec, book):
