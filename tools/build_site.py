@@ -10,9 +10,10 @@ from blurb_gate import check_catalog
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "data" / "catalog.json"
 BRAND = "Where to Read"
-# Sitewide noindex stays on every page. Do not turn it off.
-# Empty-blurb book pages also pass thin=True, so they stay noindex on their own.
-SITEWIDE_NOINDEX = True
+# Sitewide noindex is off. The catalog is served at the booksthere.com apex.
+# Empty-blurb book pages still pass thin=True and keep their own robots noindex.
+# Do not drop that per-page tag, and do not list those URLs in the sitemap.
+SITEWIDE_NOINDEX = False
 # One origin for every public URL the generators emit. Apex, https, no www.
 SITE_ORIGIN = "https://booksthere.com"
 FORBIDDEN = re.compile(r"\b(pdf|epub|mobi|download|free ebook)\b", re.I)
@@ -69,20 +70,21 @@ try {
 
 def head(title, description, depth, extra="", thin=False, path=""):
     prefix = "../" * depth
-    # Sitewide noindex stays. An empty-blurb book page is noindex on its own,
-    # so the tag remains if the sitewide flag is later turned off.
-    robots = ""
+    # Sitewide noindex is off. An empty-blurb book page is noindex on its own,
+    # so the tag remains on that thin page after the sitewide flag is turned off.
+    meta_bits = []
+    if thin:
+        meta_bits.append("<!-- empty-blurb noindex -->")
     if SITEWIDE_NOINDEX or thin:
-        robots = '<meta name="robots" content="noindex">'
-    thin_mark = "<!-- empty-blurb noindex -->\n" if thin else ""
+        meta_bits.append('<meta name="robots" content="noindex">')
+    meta_block = ("\n".join(meta_bits) + "\n") if meta_bits else ""
     url = absolute_url(path)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-{thin_mark}{robots}
-<link rel="canonical" href="{esc(url)}">
+{meta_block}<link rel="canonical" href="{esc(url)}">
 <meta property="og:url" content="{esc(url)}">
 <title>{esc(title)}</title>
 <meta name="description" content="{esc(description)}">
@@ -537,11 +539,53 @@ def page_about():
   <h2 class="shelf-label">Where the facts come from</h2>
   <p>The title, the author, and any year printed on a card come from the catalog record. A year is shown only when that record already has one, and never past 1928. A featured book keeps a handwritten note. Any other note is a sentence rewritten from a public description of that book. Where no such description was found, the card has no note: that book page is noindex on its own, and the title is left off the author and subject shelves. Notes do not carry catalog ids.</p>
   <h2 class="shelf-label">Covers and indexing</h2>
-  <p>Cover images, when a record has one, are loaded from covers.openlibrary.org. They are not stored here. Every page sends a noindex robots tag. Its canonical URL is the absolute address of that page on https://booksthere.com/, with the trailing slash.</p>
+  <p>Cover images, when a record has one, are loaded from covers.openlibrary.org. They are not stored here. A book page with no note sends its own noindex robots tag. Every other page is open to indexing. Each canonical URL is the absolute address of that page on https://booksthere.com/, with the trailing slash. The sitemap lists those indexable addresses and leaves the empty-note book pages out.</p>
 </main>
 {footer(depth)}
 """
     write(ROOT / "about" / "index.html", body)
+
+
+def indexable_paths(catalog, used_authors):
+    """Home, about, every author and subject hub, and book pages that have a note.
+
+    Empty-blurb book URLs are indexable nowhere: they stay noindex and stay out.
+    """
+    paths = ["", "about"]
+    for subject in catalog["subjects"]:
+        paths.append(f"subjects/{subject['slug']}")
+    for author in used_authors:
+        paths.append(f"authors/{author['slug']}")
+    for book in catalog["books"]:
+        if has_note(book):
+            paths.append(f"books/{book['slug']}")
+    return paths
+
+
+def write_sitemap(paths):
+    locs = []
+    seen = set()
+    for site_path in paths:
+        url = absolute_url(site_path)
+        if url in seen:
+            raise SystemExit(f"duplicate sitemap url {url}")
+        seen.add(url)
+        locs.append(f"  <url>\n    <loc>{esc(url)}</loc>\n  </url>")
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + "\n".join(locs)
+        + "\n</urlset>\n"
+    )
+    write(ROOT / "sitemap.xml", xml)
+    robots = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "\n"
+        f"Sitemap: {SITE_ORIGIN}/sitemap.xml\n"
+    )
+    (ROOT / "robots.txt").write_text(robots)
+    return locs
 
 
 def main():
@@ -590,9 +634,20 @@ def main():
             raise SystemExit(f"empty subject {s['slug']}")
         page_subject(s, mine, authors, subjects)
     page_about()
+    paths = indexable_paths(catalog, used_authors)
+    write_sitemap(paths)
     assert_empty_blurbs_unlinked(catalog)
     assert_apex_urls(catalog)
-    print(f"pages: 1 home, {len(catalog['books'])} books, {len(used_authors)} authors, {len(catalog['subjects'])} subjects, about")
+    n_empty = sum(1 for b in catalog["books"] if not has_note(b))
+    n_noted = len(catalog["books"]) - n_empty
+    print(
+        f"pages: 1 home, {len(catalog['books'])} books, {len(used_authors)} authors, "
+        f"{len(catalog['subjects'])} subjects, about"
+    )
+    print(
+        f"sitemap: {len(paths)} indexable urls; books with notes {n_noted}; "
+        f"empty-blurb books excluded {n_empty}"
+    )
 
 
 def assert_apex_urls(catalog):
@@ -619,11 +674,17 @@ def assert_apex_urls(catalog):
         else:
             raise SystemExit(f"unexpected page {rel}")
         text = path.read_text()
-        if 'name="robots" content="noindex"' not in text:
-            raise SystemExit(f"missing noindex {rel}")
-        if rel.startswith("books/") and rel.split("/")[1] in empty:
-            if "<!-- empty-blurb noindex -->" not in text:
+        is_empty_book = rel.startswith("books/") and rel.split("/")[1] in empty
+        has_robots = 'name="robots" content="noindex"' in text
+        has_thin_mark = "<!-- empty-blurb noindex -->" in text
+        if is_empty_book:
+            if not has_robots or not has_thin_mark:
                 raise SystemExit(f"empty-blurb page lost its own noindex {rel}")
+        else:
+            if has_robots or has_thin_mark:
+                raise SystemExit(f"indexable page still noindex {rel}")
+        if SITEWIDE_NOINDEX:
+            raise SystemExit("sitewide noindex is still on")
         cans = canonical_re.findall(text)
         ogs = og_re.findall(text)
         if cans != [expected] or ogs != [expected]:
@@ -641,8 +702,60 @@ def assert_apex_urls(catalog):
     pride_url = absolute_url("books/pride-and-prejudice")
     if pride_url not in pride_text or 'href="./"' in pride_text:
         raise SystemExit("Pride and Prejudice is missing its apex URL")
+    if 'name="robots" content="noindex"' in pride_text or "<!-- empty-blurb noindex -->" in pride_text:
+        raise SystemExit("Pride and Prejudice is still noindex")
     if "<span class=\"brand-word\">books<span class=\"brand-accent\">there</span></span>" not in pride_text:
         raise SystemExit("wordmark changed")
+    assert_sitemap(catalog, empty)
+
+
+def assert_sitemap(catalog, empty):
+    """Sitemap lists indexable apex URLs only. robots.txt names that sitemap."""
+    robots = (ROOT / "robots.txt").read_text()
+    sitemap_line = f"Sitemap: {SITE_ORIGIN}/sitemap.xml"
+    if sitemap_line not in robots.splitlines():
+        raise SystemExit(f"robots.txt does not name {sitemap_line}")
+    if "github.io" in robots or "www.booksthere.com" in robots or "http://" in robots:
+        raise SystemExit("robots.txt names a non-apex host")
+    xml = (ROOT / "sitemap.xml").read_text()
+    if "github.io" in xml or "www.booksthere.com" in xml:
+        raise SystemExit("sitemap left the https apex")
+    # The sitemap namespace itself is the http URI from the sitemap protocol.
+    # Every <loc> still has to be the https apex.
+    locs = re.findall(r"<loc>([^<]+)</loc>", xml)
+    if any(url.startswith("http://") for url in locs):
+        raise SystemExit("sitemap loc left https")
+    if len(locs) != len(set(locs)):
+        raise SystemExit("duplicate sitemap urls")
+    expected = set()
+    expected.add(absolute_url(""))
+    expected.add(absolute_url("about"))
+    for subject in catalog["subjects"]:
+        expected.add(absolute_url(f"subjects/{subject['slug']}"))
+    for author in catalog["authors"]:
+        # page_author skips an author with no books. Every catalog author has one.
+        expected.add(absolute_url(f"authors/{author['slug']}"))
+    noted = 0
+    for book in catalog["books"]:
+        url = absolute_url(f"books/{book['slug']}")
+        if book["slug"] in empty:
+            if url in locs:
+                raise SystemExit(f"empty-blurb book in sitemap: {book['slug']}")
+            continue
+        noted += 1
+        expected.add(url)
+    if set(locs) != expected:
+        missing = sorted(expected - set(locs))[:5]
+        extra = sorted(set(locs) - expected)[:5]
+        raise SystemExit(f"sitemap urls mismatch missing={missing} extra={extra}")
+    pride = absolute_url("books/pride-and-prejudice")
+    if pride not in locs:
+        raise SystemExit("Pride and Prejudice missing from sitemap")
+    if noted + len(empty) != len(catalog["books"]):
+        raise SystemExit("note/empty split does not cover the catalog")
+    for url in locs:
+        if not url.startswith(SITE_ORIGIN + "/") or not url.endswith("/"):
+            raise SystemExit(f"sitemap url is not an apex path {url}")
 
 
 def assert_empty_blurbs_unlinked(catalog):
@@ -658,7 +771,7 @@ def assert_empty_blurbs_unlinked(catalog):
         if slug in empty:
             raise SystemExit(f"empty-blurb book in search.json: {slug}")
     hrefs = re.compile(r"books/([a-z0-9-]+)/")
-    hubs = [ROOT / "index.html", ROOT / "about" / "index.html"]
+    hubs = [ROOT / "index.html", ROOT / "about" / "index.html", ROOT / "sitemap.xml"]
     for folder in ("authors", "subjects", "books"):
         hubs.extend((ROOT / folder).glob("*/*"))
     for path in hubs:
