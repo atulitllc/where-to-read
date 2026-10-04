@@ -547,7 +547,33 @@ def main():
             raise SystemExit(f"empty subject {s['slug']}")
         page_subject(s, mine, authors, subjects)
     page_about()
+    assert_empty_blurbs_unlinked(catalog)
     print(f"pages: 1 home, {len(catalog['books'])} books, {len(used_authors)} authors, {len(catalog['subjects'])} subjects, about")
+
+
+def assert_empty_blurbs_unlinked(catalog):
+    """Fail if an empty-blurb book is linked from a hub, related list, or search."""
+    empty = {
+        b["slug"]
+        for b in catalog["books"]
+        if not (b.get("blurb") or "").strip()
+    }
+    rows = json.loads((ROOT / "search.json").read_text())
+    for row in rows:
+        slug = row.get("s") or ""
+        if slug in empty:
+            raise SystemExit(f"empty-blurb book in search.json: {slug}")
+    hrefs = re.compile(r"books/([a-z0-9-]+)/")
+    hubs = [ROOT / "index.html", ROOT / "about" / "index.html"]
+    for folder in ("authors", "subjects", "books"):
+        hubs.extend((ROOT / folder).glob("*/*"))
+    for path in hubs:
+        if not path.is_file():
+            continue
+        for slug in hrefs.findall(path.read_text(errors="ignore")):
+            if slug in empty:
+                rel = path.relative_to(ROOT)
+                raise SystemExit(f"empty-blurb book linked from {rel}: {slug}")
 
 if __name__ == "__main__":
     import sys

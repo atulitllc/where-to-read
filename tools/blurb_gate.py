@@ -298,11 +298,7 @@ def _short_title(title):
     return text or (title or "")[:80]
 
 
-def in_title_rest(text, title):
-    """Text after 'In {Title},' when the note is that extract frame. Else None."""
-    raw = (text or "").strip()
-    if not raw.lower().startswith("in "):
-        return None
+def _title_candidates(title):
     titles = []
     for candidate in (
         title or "",
@@ -313,8 +309,16 @@ def in_title_rest(text, title):
         if candidate and candidate not in titles:
             titles.append(candidate)
     titles.sort(key=len, reverse=True)
+    return titles
+
+
+def _in_title_rest_exact(text, title):
+    """Text after 'In {Title},' when the note is that extract frame. Else None."""
+    raw = (text or "").strip()
+    if not raw.lower().startswith("in "):
+        return None
     hay = _apos(raw)
-    for candidate in titles:
+    for candidate in _title_candidates(title):
         prefix = "In " + _apos(candidate)
         if hay.lower().startswith(prefix.lower()):
             rest = hay[len(prefix):].lstrip()
@@ -322,6 +326,170 @@ def in_title_rest(text, title):
                 return rest[1:].strip()
             return None
     return None
+
+
+def _norm_colon(text):
+    text = _apos(text or "")
+    text = re.sub(r"\s*:\s*", ": ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _in_title_rest_loose(text, title):
+    """Same frame when the title's colon spacing, or a trailing period, differs."""
+    raw = _norm_colon(text)
+    if not raw.lower().startswith("in "):
+        return None
+    titles = []
+    for candidate in _title_candidates(title):
+        candidate = _norm_colon(candidate).strip(" ,;.")
+        if candidate and candidate.lower() not in {item.lower() for item in titles}:
+            titles.append(candidate)
+    titles.sort(key=len, reverse=True)
+    for candidate in titles:
+        prefix = "In " + candidate
+        if not raw.lower().startswith(prefix.lower()):
+            continue
+        rest = raw[len(prefix):].lstrip()
+        rest = re.sub(r"^\.\s*", "", rest)
+        if rest.startswith(","):
+            return rest[1:].strip()
+    return None
+
+
+def in_title_rest(text, title):
+    """Text after 'In {Title},' when the note is that extract frame. Else None.
+
+    A finite verb in the extract does not make this frame a note.
+    """
+    found = _in_title_rest_exact(text, title)
+    if found is not None:
+        return found
+    return _in_title_rest_loose(text, title)
+
+
+# Real prose that only needs the 'In {Title},' opener taken off.
+STRIP_IN_TITLE_SLUGS = frozenset({
+    "rise-and-fall-of-cesar-birotteau",
+    "common-sense",
+})
+
+
+def strip_in_title_opener(text, title):
+    """Return the body after 'In {Title},' with its first letter capitalized."""
+    rest = _in_title_rest_exact(text, title)
+    if not rest:
+        return None
+    rest = rest.strip()
+    if not rest:
+        return None
+    return rest[0].upper() + rest[1:]
+
+
+# 'published in –', 'written in –71', 'in –14'. Not hyphenated compounds.
+PUNCHED_IN_DASH = re.compile(
+    r"\bin\s*[–—−]\s*\d{0,4}(?=\s|[,.;:)]|$)",
+    re.I,
+)
+
+
+def punched_in_dash(text):
+    return bool(PUNCHED_IN_DASH.search(text or ""))
+
+
+def repair_punched_in_dash(text):
+    """Delete an 'in –' / 'in –NN' year hole. Nothing new is written in."""
+    original = text or ""
+    if not punched_in_dash(original):
+        return original
+    cleaned = PUNCHED_IN_DASH.sub("", original)
+    cleaned = re.sub(r",\s*published\s*,\s*", " ", cleaned, flags=re.I)
+    cleaned = re.sub(
+        r"\b([A-Za-z]{3,})\s+(the year before)\b",
+        r"\1, \2",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"(the year before [^–—−]{3,40})\s+[–—−]\s+",
+        r"\1, ",
+        cleaned,
+    )
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+    cleaned = re.sub(r",\s*,+", ",", cleaned)
+    cleaned = re.sub(r"\(\s*\)", "", cleaned)
+    return cleaned.strip()
+
+
+_SCRAP_TOPIC = re.compile(
+    r"Merrie Melodies|Cavalera Conspiracy|\bSepultura\b|Ilene Woods|"
+    r"method acting|Primetime Emmy|\bTony Award\b|Golden Globe|"
+    r"\bpodcast\b|Sarah Koenig|Jean Shepherd|Masterpiece Theatre|"
+    r"Amazing Race|Celebrity Rehab|\bUnsolved Mysteries\b|Tom and Jerry|"
+    r"Sofia the First|Once Upon a Studio|Honeymoon Hotel|"
+    r"Beaver Mills Lumber|Rat Portage Lumber|\bvoiced by\b",
+    re.I,
+)
+
+
+def scrap_topic(text):
+    """A film, podcast, award, or other page pasted in place of the book."""
+    return bool(_SCRAP_TOPIC.search(text or ""))
+
+
+def _outside_parens(text):
+    outside = re.sub(r"\([^()]*\)", " ", text or "")
+    outside = re.sub(r"\([^()]*$", " ", outside)
+    return re.sub(r"\s+", " ", outside).strip(" ,;:-")
+
+
+def cutoff_fragment(text):
+    """A title line or gloss that was cut off before it became a sentence."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    if re.search(r"\blit\.\s+[A-Z]", raw) and raw.count("(") > raw.count(")"):
+        return True
+    if re.search(r"\b(?:lat|abbr)\.\s+[A-Z]", raw):
+        return True
+    if raw.count("(") > raw.count(")"):
+        outside = _outside_parens(raw)
+        if outside and not has_finite_verb(outside) and len(outside) < 140:
+            return True
+    return False
+
+
+def trim_dangling_paren(text):
+    """Cut a short unclosed parenthesis, or one that is only a leftover sentence."""
+    raw = (text or "").strip()
+    if raw.count("(") <= raw.count(")"):
+        return raw
+    start = raw.rfind("(")
+    tail = raw[start:]
+    if ")" in tail:
+        return raw
+    head = raw[:start].rstrip()
+    if not has_finite_verb(head) or len(head) < 40:
+        return raw
+    short_tail = len(tail) <= 24
+    sentence_tail = head.endswith((".", "!", "?"))
+    if not short_tail and not sentence_tail:
+        return raw
+    if not head.endswith((".", "!", "?")):
+        head += "."
+    return head
+
+
+def drop_ripped_name_sentence(text):
+    """Remove a final sentence that ends on a punched-out name ('critic J.')."""
+    cleaned = re.sub(r"(?:^|\.\s+)[^.]*\bcritic\s+[A-Z]\.\s*$", ".", text or "").strip()
+    cleaned = re.sub(
+        r"(?:^|\.\s+)[^.]*\bcompanion\s+[A-Z][a-z]+\s+[A-Z]\.\s*$",
+        ".",
+        cleaned,
+    ).strip()
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\.\s*\.", ".", cleaned)
+    return cleaned.strip()
 
 
 def has_finite_verb(text):
@@ -447,6 +615,10 @@ def _person_named(person, title, author=""):
 def off_topic_reason(text, title, author=""):
     """Why an extract is about the wrong thing, or None when it may stay."""
     raw = text or ""
+    if scrap_topic(raw):
+        return "scrap"
+    if cutoff_fragment(raw):
+        return "fragment"
     if _FILM_SUBJECT.search(raw):
         if not re.search(r"\b(film|cinema|movies?)\b", title or "", re.I):
             return "film"
@@ -507,7 +679,9 @@ def broken_extract(text, title, author=""):
     if not raw:
         return False
     if (
-        ripped_month_day(raw)
+        in_title_rest(raw, title) is not None
+        or punched_in_dash(raw)
+        or ripped_month_day(raw)
         or verbless_in_title(raw, title)
         or participle_fragment(raw, title)
         or off_topic_reason(raw, title, author)
@@ -541,6 +715,10 @@ def check_blurb(text, slug, featured=False, title="", author=""):
         if featured:
             raise SystemExit(f"missing featured blurb: {slug}")
         return
+    if in_title_rest(text, title) is not None:
+        raise SystemExit(f"in-title extract in {slug}")
+    if punched_in_dash(text):
+        raise SystemExit(f"year punched out as in-dash in {slug}")
     if verbless_in_title(text, title):
         raise SystemExit(f"verbless extract in {slug}")
     if ripped_month_day(text):
@@ -574,10 +752,44 @@ def check_blurb(text, slug, featured=False, title="", author=""):
         raise SystemExit(f"year after 1928 in {slug}")
 
 
+def _volume_rank(book):
+    """Prefer the unsuffixed or lowest-volume copy when blurbs were pasted."""
+    slug = book.get("slug") or ""
+    volumes = [int(n) for n in re.findall(r"(?:volume|vol|part)[- ]0*(\d+)", slug, flags=re.I)]
+    tail = re.search(r"-(\d+)$", slug)
+    if volumes:
+        vol = volumes[0]
+    elif tail and not re.search(r"(?:volume|vol|part)", slug, flags=re.I):
+        vol = int(tail.group(1))
+    else:
+        vol = 0
+    try:
+        gutenberg = int(book.get("gutenberg") or 10**9)
+    except (TypeError, ValueError):
+        gutenberg = 10**9
+    return (vol, gutenberg, slug)
+
+
+def check_duplicate_blurbs(catalog):
+    """Identical non-featured notes on more than one book fail the build."""
+    groups = {}
+    for book in catalog["books"]:
+        text = (book.get("blurb") or "").strip()
+        if not text or book.get("featured"):
+            continue
+        groups.setdefault(text, []).append(book.get("slug") or "?")
+    for slugs in groups.values():
+        if len(slugs) > 1:
+            raise SystemExit(
+                f"identical blurb on {len(slugs)} books, including {slugs[0]}"
+            )
+
+
 def check_catalog(catalog):
     featured = [b for b in catalog["books"] if b.get("featured")]
     if len(featured) != 45:
         raise SystemExit(f"expected 45 featured books, found {len(featured)}")
+    check_duplicate_blurbs(catalog)
     for b in catalog["books"]:
         if b.get("history"):
             raise SystemExit(f"history template still stored on {b.get('slug')}")
@@ -601,3 +813,98 @@ def check_catalog(catalog):
         if FUTURE_YEAR.search(scrub):
             raise SystemExit(f"year after 1928 in author note: {author.get('slug')}")
     return len(catalog["books"])
+
+
+def scrub_catalog(catalog):
+    """Empty pasted extracts. Does not write a new template note.
+
+    'In {Title},' extracts are emptied, except Cesar Birotteau and Common Sense,
+    which keep the sentence after the opener. Identical copies of one note are
+    emptied down to a single volume.
+    """
+    stats = {
+        "in_title_dropped": 0,
+        "in_title_rewritten": 0,
+        "punchouts_dropped": 0,
+        "punchouts_repaired": 0,
+        "scraps_dropped": 0,
+        "fragments_dropped": 0,
+        "dupes_emptied": 0,
+    }
+    featured_before = {
+        b["slug"]: b.get("blurb") for b in catalog["books"] if b.get("featured")
+    }
+    for book in catalog["books"]:
+        if book.get("featured"):
+            continue
+        original = (book.get("blurb") or "").strip()
+        if not original:
+            continue
+        title = book.get("title") or ""
+        slug = book.get("slug") or ""
+        had_punch = punched_in_dash(original)
+        if in_title_rest(original, title) is not None:
+            if slug in STRIP_IN_TITLE_SLUGS:
+                rewritten = strip_in_title_opener(original, title)
+                if (
+                    not rewritten
+                    or in_title_rest(rewritten, title) is not None
+                    or punched_in_dash(rewritten)
+                    or scrap_topic(rewritten)
+                ):
+                    book["blurb"] = ""
+                    stats["in_title_dropped"] += 1
+                else:
+                    book["blurb"] = rewritten
+                    stats["in_title_rewritten"] += 1
+            else:
+                book["blurb"] = ""
+                stats["in_title_dropped"] += 1
+            if had_punch:
+                stats["punchouts_dropped"] += 1
+            continue
+        if scrap_topic(original) or cutoff_fragment(original):
+            book["blurb"] = ""
+            if scrap_topic(original):
+                stats["scraps_dropped"] += 1
+            else:
+                stats["fragments_dropped"] += 1
+            continue
+        cleaned = trim_dangling_paren(original)
+        if punched_in_dash(cleaned):
+            cleaned = repair_punched_in_dash(cleaned)
+            cleaned = drop_ripped_name_sentence(cleaned)
+        if (
+            not cleaned
+            or scrap_topic(cleaned)
+            or cutoff_fragment(cleaned)
+            or punched_in_dash(cleaned)
+            or (cleaned != original and (len(cleaned) < 40 or not has_finite_verb(cleaned)))
+        ):
+            book["blurb"] = ""
+            if had_punch:
+                stats["punchouts_dropped"] += 1
+            else:
+                stats["fragments_dropped"] += 1
+            continue
+        if cleaned != original:
+            book["blurb"] = cleaned
+            if had_punch:
+                stats["punchouts_repaired"] += 1
+    groups = {}
+    for book in catalog["books"]:
+        text = (book.get("blurb") or "").strip()
+        if not text or book.get("featured"):
+            continue
+        groups.setdefault(text, []).append(book)
+    for copies in groups.values():
+        if len(copies) < 2:
+            continue
+        copies.sort(key=_volume_rank)
+        for extra in copies[1:]:
+            extra["blurb"] = ""
+            stats["dupes_emptied"] += 1
+    for book in catalog["books"]:
+        if book.get("featured") and book.get("blurb") != featured_before[book["slug"]]:
+            raise SystemExit(f"featured blurb changed: {book['slug']}")
+    return stats
