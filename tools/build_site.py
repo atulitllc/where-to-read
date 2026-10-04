@@ -351,6 +351,17 @@ def book_card(b, authors, subjects):
       </article>"""
 
 
+def home_rails(books, authors, subjects, per_row=9):
+    """One wooden board per row — wrap stays CSS-side for narrow viewports."""
+    if not books:
+        return ""
+    chunks = [books[i:i + per_row] for i in range(0, len(books), per_row)]
+    return "".join(
+        f'<div class="home-rail">{"".join(book_card(b, authors, subjects) for b in chunk)}</div>'
+        for chunk in chunks
+    )
+
+
 TOP_READ = [
     "pride-and-prejudice", "jane-eyre", "frankenstein", "dracula",
     "the-adventures-of-sherlock-holmes", "moby-dick", "adventures-of-huckleberry-finn",
@@ -415,18 +426,18 @@ def page_home(catalog, authors, subjects):
         f'<li><a href="subjects/{esc(s["slug"])}/">{esc(s["name"])}</a></li>' for s in catalog["subjects"]
     )
     top = pick_books(books, TOP_READ, 18)
-    shelves = [(label, slug, pick_books(books, seeds, 10, subject=slug)) for label, slug, seeds in READ_SHELVES]
+    shelves = [(label, slug, pick_books(books, seeds, 9, subject=slug)) for label, slug, seeds in READ_SHELVES]
     shown = len(top) + sum(len(rows) for _l, _s, rows in shelves)
     if shown > 80:
         raise SystemExit(f"home card cap {shown}")
     shelf_html = [f"""<section class="shelf" aria-labelledby="top-read">
     <div class="shelf-head"><h2 id="top-read" class="shelf-label">Top Read</h2></div>
-    <div class="home-rail">{''.join(book_card(b, authors, subjects) for b in top)}</div>
+    {home_rails(top, authors, subjects)}
   </section>"""]
     for label, slug, rows in shelves:
         shelf_html.append(f"""<section class="shelf" aria-labelledby="shelf-{esc(slug)}">
     <div class="shelf-head"><h2 id="shelf-{esc(slug)}" class="shelf-label">{esc(label)}</h2><a class="see-all" href="subjects/{esc(slug)}/">See all</a></div>
-    <div class="home-rail">{''.join(book_card(b, authors, subjects) for b in rows)}</div>
+    {home_rails(rows, authors, subjects)}
   </section>""")
     n_books = len(books)
     n_authors = len(catalog["authors"])
