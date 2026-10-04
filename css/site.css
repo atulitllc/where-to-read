@@ -62,8 +62,8 @@ button { font: inherit; color: inherit; }
 }
 :root[data-theme="dark"] .skip { color: #1c1713; }
 .skip:focus { top: 12px; }
-.wrap { width: min(1560px, calc(100% - 40px)); margin: 0 auto; }
-.detail-wrap { width: min(1560px, calc(100% - 40px)); }
+.wrap { width: min(1320px, calc(100% - 40px)); margin: 0 auto; }
+.detail-wrap { width: min(1320px, calc(100% - 40px)); }
 .topbar {
   position: sticky;
   top: 0;
@@ -344,9 +344,9 @@ footer.colophon {
   color: var(--ink-soft);
   font-size: 0.92rem;
 }
-/* Detail content uses the wider rail; keep its end block on that same rail. */
+/* Detail content and its end block share the same centered rail. */
 main.detail-wrap + footer.colophon {
-  width: min(1560px, calc(100% - 40px));
+  width: min(1320px, calc(100% - 40px));
   margin-left: auto;
   margin-right: auto;
 }
@@ -408,33 +408,33 @@ footer.colophon p { margin: 0 0 8px; }
 .home-rail {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(168px, 196px);
-  gap: 8px;
+  grid-auto-columns: minmax(240px, 260px);
+  gap: 12px;
   overflow-x: auto;
-  padding: 0 0 6px;
+  padding: 0 0 8px;
   scroll-snap-type: x mandatory;
   scrollbar-width: thin;
 }
 .home-rail .card {
-  grid-template-columns: 48px minmax(0, 1fr);
-  gap: 6px;
-  padding: 6px;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
 }
 .home-rail .cover,
 .home-rail .cover-fallback {
-  width: 48px;
-  height: 56px;
-  font-size: 0.65rem;
-  padding: 3px;
+  width: 72px;
+  height: 108px;
+  font-size: 0.8rem;
+  padding: 6px;
 }
-.home-rail .card h2 { font-size: 0.92rem; margin: 0 0 1px; }
+.home-rail .card h2 { font-size: 1.05rem; margin: 1px 0 3px; }
 .home-rail .by,
 .home-rail .meta,
-.home-rail .blurb { font-size: 0.75rem; line-height: 1.25; }
+.home-rail .blurb { font-size: 0.82rem; line-height: 1.35; }
 .home-rail .blurb {
-  margin: 3px 0 0;
+  margin: 5px 0 0;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
