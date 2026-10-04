@@ -183,6 +183,10 @@ h1 {
   margin: 0 0 8px;
   list-style: none;
 }
+.subject-nav {
+  margin: 10px 0 18px;
+}
+.subject-nav .subjects { margin: 0; }
 .subjects a, .author-index a {
   text-decoration: none;
   border: 1px solid var(--rule);
@@ -485,48 +489,7 @@ footer.colophon p { margin: 0 0 8px; }
   line-height: 0;
   text-decoration: none;
 }
-/* Category sits on the artwork, same job as Play's .thumb-badge. */
-.thumb {
-  position: relative;
-  display: block;
-  isolation: isolate;
-}
-.thumb > .cover,
-.thumb > .cover-fallback {
-  position: relative;
-  z-index: 0;
-}
-.cover-badge {
-  position: absolute;
-  z-index: 3;
-  top: 8px;
-  left: 8px;
-  display: block;
-  width: max-content;
-  max-width: calc(100% - 16px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 6px 9px 5px;
-  border-radius: 999px;
-  border: 2px solid #2a2218;
-  background: rgba(255, 250, 242, 0.96);
-  color: #1c140e;
-  font-family: system-ui, "Segoe UI", sans-serif;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  line-height: 1;
-  pointer-events: none;
-  box-shadow: 0 6px 14px rgba(20, 12, 6, 0.4);
-}
-:root[data-theme="dark"] .cover-badge {
-  color: #f6efe4;
-  background: rgba(10, 8, 6, 0.86);
-  border-color: #f3e7d4;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
-}
+.thumb { position: relative; display: block; }
 
 .home-rail .cover,
 .home-rail .cover-fallback {

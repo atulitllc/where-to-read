@@ -302,8 +302,7 @@ def page_subject(subject, books, authors, subjects):
     prefix = "../../"
     title = f"{subject['name']} books | {BRAND}"
     desc = f"Public-domain {subject['name'].lower()} books in this catalog. Read them on Open Library. This site does not host copyrighted books."
-    label = SHELF_BADGE.get(subject["slug"], subject["name"])
-    rails = home_rails(books, authors, subjects, prefix=prefix, badge=label)
+    rails = home_rails(books, authors, subjects, prefix=prefix)
     body = f"""{head(title, desc, depth)}
 <body>
 {header(depth)}
@@ -319,39 +318,11 @@ def page_subject(subject, books, authors, subjects):
 """
     write(ROOT / "subjects" / subject["slug"] / "index.html", body)
 
-# Home shelf names, not the raw catalog subject, when those differ.
-SHELF_BADGE = {
-    "novel": "Fiction",
-    "childrens-books": "Kids",
-    "history": "History",
-    "poetry": "Poetry",
-}
-# More specific shelves win over Fiction.
-BADGE_PRIORITY = (
-    "childrens-books", "poetry", "history", "mystery", "science-fiction",
-    "fantasy", "gothic", "romance", "adventure", "humor", "memoir",
-    "letters", "essays", "short-stories", "novel", "literature",
-)
-
-
-def shelf_badge(book, subjects, override=None):
-    if override:
-        return override
-    slugs = book.get("subjects") or []
-    for slug in BADGE_PRIORITY:
-        if slug in slugs:
-            return SHELF_BADGE.get(slug) or subjects[slug]["name"]
-    if slugs and slugs[0] in subjects:
-        return SHELF_BADGE.get(slugs[0], subjects[slugs[0]]["name"])
-    return "Books"
-
-
-def book_card(b, authors, subjects, prefix="", badge=None):
+def book_card(b, authors, subjects, prefix=""):
     author = authors[b["author"]]
     year = f"{b['year']} · " if b.get("year") else ""
     depth = prefix.count("../")
-    label = esc(shelf_badge(b, subjects, badge))
-    thumb = f'<span class="thumb">{cover_html(b)}<span class="cover-badge">{label}</span></span>'
+    thumb = f'<span class="thumb">{cover_html(b)}</span>'
     return f"""<article class="card">
         <a href="{prefix}books/{b['slug']}/">{thumb}</a>
         <div>
@@ -363,13 +334,13 @@ def book_card(b, authors, subjects, prefix="", badge=None):
       </article>"""
 
 
-def home_rails(books, authors, subjects, prefix="", badge=None, per_row=9):
+def home_rails(books, authors, subjects, prefix="", per_row=9):
     """One wooden board per row — wrap stays CSS-side for narrow viewports."""
     if not books:
         return ""
     chunks = [books[i:i + per_row] for i in range(0, len(books), per_row)]
     return "".join(
-        f'<div class="home-rail">{"".join(book_card(b, authors, subjects, prefix, badge) for b in chunk)}</div>'
+        f'<div class="home-rail">{"".join(book_card(b, authors, subjects, prefix) for b in chunk)}</div>'
         for chunk in chunks
     )
 
@@ -449,7 +420,7 @@ def page_home(catalog, authors, subjects):
     for label, slug, rows in shelves:
         shelf_html.append(f"""<section class="shelf" aria-labelledby="shelf-{esc(slug)}">
     <div class="shelf-head"><h2 id="shelf-{esc(slug)}" class="shelf-label">{esc(label)}</h2><a class="see-all" href="subjects/{esc(slug)}/">See all</a></div>
-    {home_rails(rows, authors, subjects, badge=label)}
+    {home_rails(rows, authors, subjects)}
   </section>""")
     n_books = len(books)
     n_authors = len(catalog["authors"])
@@ -466,12 +437,12 @@ def page_home(catalog, authors, subjects):
     <input id="find" data-find type="search" placeholder="Austen, Douglass, a title…" autocomplete="off">
     <ul id="find-results" class="find-results" hidden></ul>
   </div>
+  <nav class="subject-nav" aria-label="Subjects">
+    <ul class="subjects">{subject_bits}</ul>
+  </nav>
   <div id="shelves">
   {''.join(shelf_html)}
   </div>
-  <hr class="rule">
-  <h2 class="shelf-label">Subjects</h2>
-  <ul class="subjects">{subject_bits}</ul>
 </main>
 {footer(depth)}
 """
