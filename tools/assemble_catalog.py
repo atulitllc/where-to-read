@@ -293,7 +293,7 @@ def main():
             rec["year"] = None
         rec.pop("history", None)
         if not (rec.get("blurb") or "").strip():
-            raise SystemExit(f"stored blurb missing for {rec.get('slug')}; templates are not filled in")
+            rec["blurb"] = ""
         chosen.append(rec)
 
     for b in existing["books"]:
@@ -451,9 +451,6 @@ def main():
                 if b.get("author_death"):
                     a["death"] = b.get("author_death")
                 break
-    missing = [b.get("slug") for b in chosen if not (b.get("blurb") or "").strip()]
-    if missing:
-        raise SystemExit(f"{len(missing)} books have no stored blurb; write one before building")
     books_out = []
     for b in chosen:
         books_out.append({k: v for k, v in b.items() if k != "author_name" or True})

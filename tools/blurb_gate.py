@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Fail the build if a stock year clause or an old lead pattern is back.
+"""Fail the build if a stock year clause, an old lead, or a subject-heading frame is back.
 
-The patterns below are the retired shelf templates. They are detectors only.
-Nothing in this module fills a blurb.
+The patterns below are detectors only. Nothing in this module fills a blurb.
+An empty note is allowed. A featured book still needs its handwritten note.
 """
 import re
+import unicodedata
 
 # Fixed wording from the retired LEADS list and the stock year/shelf sentences.
 # Short function words are intentionally not listed; these are the repeated frames.
@@ -103,9 +104,105 @@ CATALOG_ID = re.compile(
 )
 
 
-def check_blurb(text, slug, featured=False, title=""):
-    if not text or not str(text).strip():
-        raise SystemExit(f"missing blurb: {slug}")
+def _folded(text):
+    text = unicodedata.normalize("NFKD", text or "")
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def _title_core(title):
+    short = re.sub(r"\s*[—–-]\s*Volume\b.*$", "", title or "", flags=re.I)
+    short = re.sub(r",?\s+Vol(?:ume|\.)\s+.*$", "", short, flags=re.I)
+    return re.sub(r"^(the|a|an)\s+", "", _folded(short))
+
+
+def _title_in(text, title):
+    core = _title_core(title)
+    hay = _folded(text)
+    if not core or not hay:
+        return False
+    if core in hay or hay in core:
+        return True
+    prefix = " ".join(core.split()[:5])
+    if len(prefix) >= 16 and prefix in hay:
+        return True
+    words = [w for w in core.split() if len(w) > 2]
+    if not words:
+        return core in hay
+    hit = sum(1 for w in words if w in hay.split())
+    return hit >= max(1, int(round(len(words) * 0.7)))
+
+
+def _fold_abbreviations(text):
+    text = re.sub(
+        r"\b(?:Jr|Sr|St|Mr|Mrs|Ms|Dr|Vol|No|vs|Prof|Rev|Gen|Capt|Lt|Col|etc|e\.g|i\.e|Hon|Jos|Mme|Chas)\.",
+        lambda m: m.group(0).replace(".", "@"),
+        text,
+        flags=re.I,
+    )
+    text = re.sub(r"\b[A-Z][a-z]{1,2}\.", lambda m: m.group(0).replace(".", "@"), text)
+    return re.sub(r"\b[A-Z]\.", lambda m: m.group(0).replace(".", "@"), text)
+
+
+def wrote_frame(text, title):
+    """The whole note is '{Author} wrote {Title}.'"""
+    raw = (text or "").strip()
+    match = re.fullmatch(r"(.+?)\s+wrote\s+(.+)\.", raw)
+    if not match:
+        return False
+    who, what = match.group(1).strip(), match.group(2).strip()
+    if len(who.split()) > 14:
+        return False
+    if re.search(r"\.\s+[A-Z]", _fold_abbreviations(who)):
+        return False
+    core = _title_core(title)
+    got = re.sub(r"^(the|a|an)\s+", "", _folded(what))
+    if not core or not got:
+        return False
+    got_words = got.split()
+    core_words = core.split()
+    if len(got_words) > len(core_words) + 3:
+        return False
+    hit = sum(1 for w in got_words if w in core_words)
+    return hit / len(got_words) >= 0.75
+
+
+def subject_heading_frame(text, title, author=""):
+    """The whole note is '{subjects}, in {Author’s Title}.'"""
+    raw = (text or "").strip()
+    if ", in " not in raw or not raw.endswith("."):
+        return False
+    parts = raw.split(", in ")
+    limit = len(_title_core(title)) + len(author or "") + 60
+    for i in range(1, len(parts)):
+        head = ", in ".join(parts[:i]).strip()
+        tail = ", in ".join(parts[i:]).strip()
+        body = tail[:-1].strip()
+        break_in_tail = re.search(r"\.\s+[A-Z][a-z]", _fold_abbreviations(body))
+        break_in_title = re.search(r"\.\s+[A-Z][a-z]", _fold_abbreviations(title or ""))
+        if break_in_tail and not break_in_title:
+            continue
+        if re.match(r"^In\s+", head) and _title_in(head, title):
+            continue
+        if re.search(r"\b(is|was|were|are|recounts|describes|follows|tells)\b", head, re.I):
+            continue
+        if _title_in(body, title) and len(body) <= limit:
+            return True
+    return False
+
+
+def check_blurb(text, slug, featured=False, title="", author=""):
+    text = (text or "").strip()
+    if not text:
+        if featured:
+            raise SystemExit(f"missing featured blurb: {slug}")
+        return
+    if wrote_frame(text, title):
+        raise SystemExit(f"wrote frame in {slug}")
+    if subject_heading_frame(text, title, author):
+        raise SystemExit(f"subject-heading frame in {slug}")
+    if ",," in text:
+        raise SystemExit(f"punched-out date in {slug}")
     for phrase in FORBIDDEN_SUBSTRINGS:
         if phrase.lower() in text.lower():
             raise SystemExit(f"retired lead in {slug}: {phrase}")
@@ -136,6 +233,7 @@ def check_catalog(catalog):
             b.get("slug") or "?",
             featured=bool(b.get("featured")),
             title=b.get("title") or "",
+            author=b.get("author_name") or "",
         )
     titles_by_author = {}
     for b in catalog["books"]:

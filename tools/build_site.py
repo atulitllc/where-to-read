@@ -235,6 +235,11 @@ def page_book(book, authors, subjects, by_author, by_subject):
             + related_list(same_subject, authors, depth)
         )
     related_html = "\n".join(related_parts)
+    blurb_html = (
+        f'<p class="blurb">{esc(book["blurb"])}</p>'
+        if (book.get("blurb") or "").strip()
+        else ""
+    )
     body = f"""{head(title, desc, depth, extra)}
 <body>
 {header(depth)}
@@ -255,7 +260,7 @@ def page_book(book, authors, subjects, by_author, by_subject):
         <p class="by">by <a href="{prefix}authors/{author['slug']}/">{esc(author['name'])}</a></p>
         <p class="meta">{year}{subject_links(book, subjects, depth)}</p>
         <p class="ol-id">Open Library {esc(book['ol_id'])}</p>
-        <p class="blurb">{esc(book['blurb'])}</p>
+        {blurb_html}
       </div>
     </div>
     <div class="book-details">
@@ -323,13 +328,18 @@ def book_card(b, authors, subjects, prefix=""):
     year = f"{b['year']} · " if b.get("year") else ""
     depth = prefix.count("../")
     thumb = f'<span class="thumb">{cover_html(b)}</span>'
+    blurb_html = (
+        f'<p class="blurb">{esc(b["blurb"])}</p>'
+        if (b.get("blurb") or "").strip()
+        else ""
+    )
     return f"""<article class="card">
         <a href="{prefix}books/{b['slug']}/">{thumb}</a>
         <div>
           <h2><a href="{prefix}books/{b['slug']}/">{esc(b['title'])}</a></h2>
           <p class="by">by <a href="{prefix}authors/{author['slug']}/">{esc(author['name'])}</a></p>
           <p class="meta">{year}{subject_links(b, subjects, depth)}</p>
-          <p class="blurb">{esc(b['blurb'])}</p>
+          {blurb_html}
         </div>
       </article>"""
 
@@ -466,7 +476,7 @@ def page_about():
   <h2 class="shelf-label">What you will not find here</h2>
   <p>No ebook files, and no copy of a copyrighted book. Each title links out to its Open Library work and, when there is a landing page, to Project Gutenberg. Those links leave this site.</p>
   <h2 class="shelf-label">Where the facts come from</h2>
-  <p>The title, the author, and any year printed on a card come from the catalog record. A year is shown only when that record already has one, and never past 1928. The note under a title is a handwritten line for a featured book, or a sentence rewritten from a public description of that book, or, when no description is public, a sentence drawn from the subject headings on the bibliographic record. Notes do not carry catalog ids.</p>
+  <p>The title, the author, and any year printed on a card come from the catalog record. A year is shown only when that record already has one, and never past 1928. A featured book keeps a handwritten note. Any other note is a sentence rewritten from a public description of that book. Where no such description was found, the card has no note. Notes do not carry catalog ids.</p>
   <h2 class="shelf-label">Covers and indexing</h2>
   <p>Cover images, when a record has one, are loaded from covers.openlibrary.org. They are not stored here. Every page sends a noindex robots tag and a relative canonical URL of <code>./</code>.</p>
 </main>

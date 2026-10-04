@@ -150,6 +150,7 @@ def strip_years(sentence, allowed):
         "",
         s,
     )
+    s = repair_punched_dates(s)
     s = re.sub(r"\s{2,}", " ", s).strip(" ,;")
     if re.search(r"\b(from|between)\s+to\b", s, re.I):
         return None
@@ -604,33 +605,56 @@ def title_already_says(phrase, title):
     return len(pt & tt) / len(pt) >= 0.7
 
 
-def from_subjects(book, subject_string):
-    title = short_title(book.get("title") or "")
-    author = author_for_blurb(book.get("author_name"))
-    who = possessive(author) if author else ""
-    headings = [h.strip() for h in (subject_string or "").split(";") if h.strip()]
-    phrases = []
-    forms = []
-    for heading in headings:
-        phrase, form = heading_bits(heading)
-        if form:
-            forms.append(form)
-        if phrase and not title_already_says(phrase, title):
-            phrases.append(phrase)
-    specific = [p for p in phrases if p not in {"verse", "a play", "letters", "short stories", "fairy tales", "essays", "sermons"}]
-    use = specific or phrases
-    seen = set()
-    use = [p for p in use if not (p.lower() in seen or seen.add(p.lower()))][:4]
-    core = english_join(use)
-    if core:
-        core_cap = core[:1].upper() + core[1:]
-        shown = re.sub(r"^(The|A|An)\s+", "", title) if who else title
-        head = f"{who} {shown}" if who and len(shown) < 110 else title
-        return tidy(f"{core_cap}, in {head}.")
-    # Headings repeat the title, or they name only a form. Say who wrote it.
-    if author:
-        return tidy(f"{author} wrote {title}.")
-    return tidy(f"{title} is the text on this record.")
+def from_subjects(*_args, **_kwargs):
+    raise SystemExit(
+        "from_subjects is disabled. Subject-heading notes are not published."
+    )
+
+
+MONTHS = (
+    "January|February|March|April|May|June|July|August|"
+    "September|October|November|December"
+)
+WEEKDAYS = "Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday"
+
+
+def repair_punched_dates(text):
+    """Drop a month-and-day left behind when a year was removed."""
+    s = text or ""
+    s = re.sub(
+        rf"\b(?:on\s+)?(?:(?:{WEEKDAYS}),\s+)?(?:{MONTHS})\s+\d{{1,2}}(?:\s*[–-]\s*\d{{1,2}})?\s*,\s*,",
+        "",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(rf"\bOn\s+(?:{MONTHS})\s+\d{{1,2}}\s*,\s*,", "", s, flags=re.I)
+    s = re.sub(r'"\s*,\s*,\s*"', '", "', s)
+    s = re.sub(r",\s*,+", ",", s)
+    s = re.sub(
+        rf"\b(?:on\s+)?(?:(?:{WEEKDAYS}),\s+)?(?:{MONTHS})\s+\d{{1,2}}(?:\s*[–-]\s*\d{{1,2}})?\s*,\s*\.",
+        ".",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(
+        rf"\bon\s+(?:{MONTHS})\s+\d{{1,2}}\.(?!\d)",
+        ".",
+        s,
+        flags=re.I,
+    )
+    s = re.sub(r"\s+\bon\s*,", "", s, flags=re.I)
+    s = re.sub(r"\b([Pp]ublished|[Rr]eleased)\s+on\s*,", r"\1,", s)
+    s = re.sub(r"\bPublished\s+it\b", "it", s)
+    s = re.sub(r"\bPublished,\s+", "", s)
+    s = re.sub(r",\s+It\b", ", it", s)
+    s = re.sub(r"\bit was Collected\b", "it was collected", s)
+    s = re.sub(r"\bdated\s+and\b", "and", s)
+    s = re.sub(r"\buntil\s+in\b", "in", s)
+    s = re.sub(r"\s{2,}", " ", s)
+    s = re.sub(r"\s+([,.;])", r"\1", s)
+    s = re.sub(r"\(\s*,", "(", s)
+    s = re.sub(r"([.!?]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), s)
+    return s.strip()
 
 
 def ol_description(rec, book):
@@ -680,6 +704,7 @@ def acceptable_blurb(text, book):
             book.get("slug") or "?",
             featured=bool(book.get("featured")),
             title=book.get("title") or "",
+            author=book.get("author_name") or "",
         )
     except SystemExit:
         return False
@@ -700,16 +725,11 @@ def compose_one(book, pg_subjects, extract, ol_rec, wiki_title=""):
     ol_text = from_prose(ol_description(ol_rec, book), book) if ol_rec else None
     if ol_text and acceptable_blurb(ol_text, book):
         return ol_text, "ol"
-    text = from_subjects(book, pg_subjects)
-    if not acceptable_blurb(text, book):
-        author = author_for_blurb(book.get("author_name"))
-        title = short_title(book.get("title") or "")
-        text = tidy(f"{author} wrote {title}.") if author else tidy(f"{title}.")
-    return text, "subjects"
+    return "", "none"
 
 
 def apply_to_catalog(catalog, extracts, ol, pg, wiki_titles=None):
-    counts = {"featured": 0, "wiki": 0, "ol": 0, "subjects": 0}
+    counts = {"featured": 0, "wiki": 0, "ol": 0, "none": 0}
     wiki_titles = wiki_titles or {}
     for book in catalog["books"]:
         book.pop("history", None)
