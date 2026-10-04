@@ -83,13 +83,14 @@ button { font: inherit; color: inherit; }
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: var(--ink);
   text-decoration: none;
   font-family: var(--display);
-  font-size: 1.7rem;
+  font-size: 1.55rem;
+  font-stretch: extra-condensed;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.06em;
   line-height: 1;
 }
 .brand svg { flex: none; }
