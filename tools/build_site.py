@@ -15,6 +15,12 @@ FORBIDDEN = re.compile(r"\b(pdf|epub|mobi|download|free ebook)\b", re.I)
 def esc(s):
     return html.escape(s if s is not None else "", quote=True)
 
+def external_attrs(url):
+    """Return safe new-tab attributes for off-site HTTP(S) anchors."""
+    if re.match(r"^https?://", url or "", re.I):
+        return ' target="_blank" rel="noopener noreferrer"'
+    return ""
+
 def boot():
     return """<script>
 try {
@@ -98,7 +104,7 @@ def header(depth):
 def footer(depth):
     return """<footer class="colophon wrap">
   <p>Where to Read is a catalog of public-domain books. You read them on Open Library. This site does not host copyrighted books.</p>
-  <p>Records are from <a href="https://openlibrary.org/">Open Library</a>. Cover images, when a record has one, are loaded from covers.openlibrary.org and are not stored here. Project Gutenberg links open that book’s landing page only.</p>
+  <p>Records are from <a href="https://openlibrary.org/" target="_blank" rel="noopener noreferrer">Open Library</a>. Cover images, when a record has one, are loaded from covers.openlibrary.org and are not stored here. Project Gutenberg links open that book’s landing page only.</p>
 </footer>
 <script src="{prefix}js/theme.js"></script>
 </body>
@@ -178,7 +184,7 @@ def page_book(book, authors, subjects, by_author, by_subject):
     year = f"{book['year']} · " if book.get("year") else ""
     read_li = ""
     if book.get("read_url"):
-        read_li = f'<li><a href="{esc(book["read_url"])}">Read or borrow on Open Library</a></li>'
+        read_li = f'<li><a href="{esc(book["read_url"])}"{external_attrs(book["read_url"])}>Read or borrow on Open Library</a></li>'
     # sameAs is the Open Library work and the Gutenberg landing page only.
     # Borrow links stay in the visible list, never in sameAs.
     same = [book["ol_url"]]
@@ -255,9 +261,9 @@ def page_book(book, authors, subjects, by_author, by_subject):
       <p class="author-snippet">{esc(author['intro'])} <a href="{prefix}authors/{author['slug']}/">More of this shelf for {esc(author['name'])}</a>.</p>
       <h2 class="shelf-label">Where to read it</h2>
       <ul class="where">
-        <li><a href="{esc(book['ol_url'])}">Open Library work</a></li>
+        <li><a href="{esc(book['ol_url'])}"{external_attrs(book['ol_url'])}>Open Library work</a></li>
         {read_li}
-        <li><a href="{esc(book['gutenberg_url'])}">Project Gutenberg page</a></li>
+        <li><a href="{esc(book['gutenberg_url'])}"{external_attrs(book['gutenberg_url'])}>Project Gutenberg page</a></li>
       </ul>
       <p class="note">Open Library hosts the reading view. Some editions open in the browser; others ask you to borrow. Project Gutenberg links in this catalog open the book’s page, not a file kept here.</p>
       {related_html}
@@ -329,6 +335,75 @@ def page_subject(subject, books, authors):
 """
     write(ROOT / "subjects" / subject["slug"] / "index.html", body)
 
+def book_card(b, authors, subjects):
+    author = authors[b["author"]]
+    year = f"{b['year']} · " if b.get("year") else ""
+    return f"""<article class="card">
+        <a href="books/{b['slug']}/">{cover_html(b)}</a>
+        <div>
+          <h2><a href="books/{b['slug']}/">{esc(b['title'])}</a></h2>
+          <p class="by">by <a href="authors/{author['slug']}/">{esc(author['name'])}</a></p>
+          <p class="meta">{year}{subject_links(b, subjects, 0)}</p>
+          <p class="blurb">{esc(b['blurb'])}</p>
+        </div>
+      </article>"""
+
+
+TOP_READ = [
+    "pride-and-prejudice", "jane-eyre", "frankenstein", "dracula",
+    "the-adventures-of-sherlock-holmes", "moby-dick", "adventures-of-huckleberry-finn",
+    "great-expectations", "crime-and-punishment", "the-odyssey", "the-great-gatsby",
+    "narrative-of-the-life-of-frederick-douglass", "alices-adventures-in-wonderland",
+    "the-wonderful-wizard-of-oz", "leaves-of-grass", "the-raven", "walden", "meditations",
+]
+READ_SHELVES = [
+    ("Fiction", "novel", [
+        "wuthering-heights", "the-picture-of-dorian-gray", "a-tale-of-two-cities", "little-women",
+        "anna-karenina", "the-count-of-monte-cristo", "les-miserables", "don-quixote",
+        "the-scarlet-letter", "the-war-of-the-worlds",
+    ]),
+    ("Kids", "childrens-books", [
+        "peter-and-wendy", "the-secret-garden", "anne-of-green-gables", "the-adventures-of-tom-sawyer-complete",
+        "at-the-back-of-the-north-wind", "black-beauty", "the-railway-children", "five-children-and-it",
+        "little-lord-fauntleroy", "the-water-babies",
+    ]),
+    ("History", "history", [
+        "the-french-revolution-a-history", "an-account-of-egypt", "lays-of-ancient-rome", "caesar-a-sketch",
+        "the-history-of-london", "history-of-the-commune-of-1871", "a-brief-history-of-the-united-states",
+        "history-of-the-moors-of-spain", "the-life-of-flavius-josephus", "a-general-history-of-the-pyrates",
+    ]),
+    ("Poetry", "poetry", [
+        "paradise-lost", "the-rime-of-the-ancient-mariner", "sonnets-from-the-portuguese",
+        "the-complete-works-of-william-shakespeare", "endymion-a-poetic-romance",
+        "lyrical-ballads-with-a-few-other-poems-1798", "poems-on-various-subjects-religious-and-moral",
+        "the-pied-piper-of-hamelin", "poems-by-william-cullen-bryant", "1914-and-other-poems",
+    ]),
+]
+
+
+def pick_books(books, seeds, limit, subject=None, skip=()):
+    found = {b["slug"]: b for b in books}
+    chosen = []
+    seen = set(skip)
+    for slug in seeds:
+        b = found.get(slug)
+        if not b or slug in seen:
+            continue
+        if subject and subject not in b["subjects"]:
+            continue
+        chosen.append(b)
+        seen.add(slug)
+        if len(chosen) == limit:
+            return chosen
+    pool = [b for b in books if b["slug"] not in seen and (not subject or subject in b["subjects"])]
+    pool.sort(key=lambda b: (0 if b.get("featured") else 1, 0 if b.get("cover_i") else 1, len(b["title"]), b["title"].lower()))
+    for b in pool:
+        chosen.append(b)
+        if len(chosen) == limit:
+            break
+    return chosen
+
+
 def page_home(catalog, authors, subjects):
     books = catalog["books"]
     depth = 0
@@ -337,43 +412,20 @@ def page_home(catalog, authors, subjects):
     subject_bits = "".join(
         f'<li><a href="subjects/{esc(s["slug"])}/">{esc(s["name"])}</a></li>' for s in catalog["subjects"]
     )
-    author_bits = "".join(
-        f'<li><a href="authors/{esc(a["slug"])}/">{esc(a["name"])}</a></li>' for a in catalog["authors"]
-    )
-    featured = [b for b in books if b.get("featured") and b.get("cover_i")][:18]
-    cards = []
-    for b in featured:
-        author = authors[b["author"]]
-        hay = esc(f"{b['title']} {author['name']}")
-        year = f"{b['year']} · " if b.get("year") else ""
-        cards.append(f"""<article class="card" data-card="{hay}">
-        <a href="books/{b['slug']}/">{cover_html(b)}</a>
-        <div>
-          <h2><a href="books/{b['slug']}/">{esc(b['title'])}</a></h2>
-          <p class="by">by <a href="authors/{author['slug']}/">{esc(author['name'])}</a></p>
-          <p class="meta">{year}{subject_links(b, subjects, 0)}</p>
-          <p class="blurb">{esc(b['blurb'])}</p>
-        </div>
-      </article>""")
-    groups = {}
-    for b in sorted(books, key=lambda b: (b["title"].lower(), authors[b["author"]]["name"].lower())):
-        author = authors[b["author"]]
-        letter = b["title"][:1].upper()
-        if not letter.isascii() or not letter.isalnum():
-            letter = "#"
-        hay = esc(f"{b['title']} {author['name']}")
-        year = f"{b['year']} · " if b.get("year") else ""
-        groups.setdefault(letter, []).append(
-            f'<li data-card="{hay}"><a href="books/{b["slug"]}/">{esc(b["title"])}</a> '
-            f'<span class="by">· <a href="authors/{author["slug"]}/">{esc(author["name"])}</a></span> '
-            f'<span class="meta">{year}{subject_links(b, subjects, 0)}</span></li>'
-        )
-    letters = []
-    for letter in sorted(groups, key=lambda s: (s == "#", s)):
-        letters.append(
-            f'<section class="letter-block" data-letter="{esc(letter)}"><h3>{esc(letter)}</h3>'
-            f'<ul class="shelf-index">{"".join(groups[letter])}</ul></section>'
-        )
+    top = pick_books(books, TOP_READ, 18)
+    shelves = [(label, slug, pick_books(books, seeds, 10, subject=slug)) for label, slug, seeds in READ_SHELVES]
+    shown = len(top) + sum(len(rows) for _l, _s, rows in shelves)
+    if shown > 80:
+        raise SystemExit(f"home card cap {shown}")
+    shelf_html = [f"""<section class="shelf" aria-labelledby="top-read">
+    <div class="shelf-head"><h2 id="top-read" class="shelf-label">Top Read</h2></div>
+    <div class="home-rail">{''.join(book_card(b, authors, subjects) for b in top)}</div>
+  </section>"""]
+    for label, slug, rows in shelves:
+        shelf_html.append(f"""<section class="shelf" aria-labelledby="shelf-{esc(slug)}">
+    <div class="shelf-head"><h2 id="shelf-{esc(slug)}" class="shelf-label">{esc(label)}</h2><a class="see-all" href="subjects/{esc(slug)}/">See all</a></div>
+    <div class="home-rail">{''.join(book_card(b, authors, subjects) for b in rows)}</div>
+  </section>""")
     n_books = len(books)
     n_authors = len(catalog["authors"])
     body = f"""{head(title, desc, depth)}
@@ -384,28 +436,27 @@ def page_home(catalog, authors, subjects):
     <p class="kicker">A reading catalog</p>
     <h1>Public-domain books for a quiet evening</h1>
     <p class="lede">A lamp-lit shelf of {n_books} public-domain books by {n_authors} authors, with the reading itself on Open Library.</p>
-    <p class="fine">Where to Read keeps a catalog only. It does not host copyrighted books. Cover images are requested from Open Library when you open a book page.</p>
+    <p class="fine">Where to Read keeps a catalog only. It does not host copyrighted books. This page is a short set of shelves. Each subject page lists that part of the catalog.</p>
   </section>
+  <div class="find">
+    <label for="find">Search the catalog</label>
+    <input id="find" data-find type="search" placeholder="Austen, Douglass, a title…" autocomplete="off">
+    <ul id="find-results" class="find-results" hidden></ul>
+  </div>
+  <div id="shelves">
+  {''.join(shelf_html)}
+  </div>
   <hr class="rule">
   <h2 class="shelf-label">Subjects</h2>
   <ul class="subjects">{subject_bits}</ul>
-  <hr class="rule">
-  <h2 class="shelf-label">A few to start with</h2>
-  <div class="catalog">{''.join(cards)}</div>
-  <hr class="rule">
-  <h2 class="shelf-label">The whole shelf</h2>
-  <div class="find">
-    <label for="find">Find a title or author on this page</label>
-    <input id="find" data-find type="search" placeholder="Austen, Douglass, a title…">
-  </div>
-  {''.join(letters)}
-  <hr class="rule">
-  <h2 class="shelf-label">Authors</h2>
-  <ul class="author-index dense">{author_bits}</ul>
 </main>
 {footer(depth)}
 """
     write(ROOT / "index.html", body)
+    rows = [{"t": b["title"], "a": authors[b["author"]]["name"], "s": b["slug"]} for b in books]
+    (ROOT / "search.json").write_text(json.dumps(rows, ensure_ascii=False, separators=(",", ":")))
+    print("HOME", body.count('class="card"'), "cards")
+
 
 def main():
     catalog = json.loads(CATALOG.read_text())
@@ -454,4 +505,11 @@ def main():
     print(f"pages: 1 home, {len(catalog['books'])} books, {len(used_authors)} authors, {len(catalog['subjects'])} subjects")
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--home-only" in sys.argv:
+        catalog = json.loads(CATALOG.read_text())
+        authors = {a["slug"]: a for a in catalog["authors"]}
+        subjects = {s["slug"]: s for s in catalog["subjects"]}
+        page_home(catalog, authors, subjects)
+    else:
+        main()
