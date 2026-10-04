@@ -16,8 +16,6 @@ import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
-from blurbs import apply_blurbs
-
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "data" / "catalog.json"
 PG_PATH = ROOT / "data" / "pg_catalog.csv"
@@ -260,7 +258,6 @@ def safe_ocaid(value):
 def main():
     existing = json.loads(CATALOG_PATH.read_text())
     by_pg = load_maps()
-    subject_names = {s["slug"]: s["name"] for s in SUBJECTS}
     existing_books = {str(b["gutenberg"]): b for b in existing["books"]}
     existing_authors = {norm(a["name"]): a for a in existing["authors"]}
 
@@ -284,7 +281,7 @@ def main():
             return
         seen_pg.add(pg)
         rec = dict(b)
-        rec["featured"] = True
+        rec["featured"] = bool(b.get("featured"))
         rec["pd"] = True
         row = pg_rows.get(pg)
         if row and not rec.get("author_death"):
@@ -294,9 +291,9 @@ def main():
                 rec["author_death"] = people[0][2]
         if rec.get("year") == 1800:
             rec["year"] = None
-        # Handwritten blurbs are the original featured set. Others are filled below.
-        if not b.get("featured"):
-            rec["blurb"] = ""
+        rec.pop("history", None)
+        if not (rec.get("blurb") or "").strip():
+            raise SystemExit(f"stored blurb missing for {rec.get('slug')}; templates are not filled in")
         chosen.append(rec)
 
     for b in existing["books"]:
@@ -454,7 +451,9 @@ def main():
                 if b.get("author_death"):
                     a["death"] = b.get("author_death")
                 break
-    apply_blurbs(chosen, subject_names)
+    missing = [b.get("slug") for b in chosen if not (b.get("blurb") or "").strip()]
+    if missing:
+        raise SystemExit(f"{len(missing)} books have no stored blurb; write one before building")
     books_out = []
     for b in chosen:
         books_out.append({k: v for k, v in b.items() if k != "author_name" or True})

@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path
 
-from blurbs import history_copy
+from blurb_gate import check_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "data" / "catalog.json"
@@ -104,9 +104,10 @@ def header(depth):
 """
 
 def footer(depth):
-    return """<footer class="colophon wrap">
+    prefix = "../" * depth
+    return f"""<footer class="colophon wrap">
   <p>Where to Read is a catalog of public-domain books. You read them on Open Library. This site does not host copyrighted books.</p>
-  <p>Records are from <a href="https://openlibrary.org/" target="_blank" rel="noopener noreferrer">Open Library</a>. Cover images, when a record has one, are loaded from covers.openlibrary.org and are not stored here. Project Gutenberg links open that book’s landing page only.</p>
+  <p>Records are from <a href="https://openlibrary.org/" target="_blank" rel="noopener noreferrer">Open Library</a>. Cover images, when a record has one, are loaded from covers.openlibrary.org and are not stored here. Project Gutenberg links open that book’s landing page only. <a href="{prefix}about/">About this catalog</a>.</p>
 </footer>
 <script src="{prefix}js/theme.js"></script>
 </body>
@@ -258,7 +259,6 @@ def page_book(book, authors, subjects, by_author, by_subject):
       </div>
     </div>
     <div class="book-details">
-      <p class="history">{esc(history_copy(book, author, subjects))}</p>
       <h2 class="shelf-label">About the author</h2>
       <p class="author-snippet">{esc(author['intro'])} <a href="{prefix}authors/{author['slug']}/">More of this shelf for {esc(author['name'])}</a>.</p>
       <h2 class="shelf-label">Where to read it</h2>
@@ -458,8 +458,32 @@ def page_home(catalog, authors, subjects):
     print("HOME", body.count('class="card"'), "cards")
 
 
+def page_about():
+    depth = 1
+    title = f"About | {BRAND}"
+    desc = "What this catalog is. Public-domain books, read on Open Library. This site does not host the books."
+    body = f"""{head(title, desc, depth)}
+<body>
+{header(depth)}
+<main id="content" class="wrap detail-wrap">
+  <p class="kicker">Catalog notes</p>
+  <h1>A shelf, not a library.</h1>
+  <p class="lede">Where to Read is a static catalog of public-domain books. It tells you where a text can be read. It does not host the books.</p>
+  <h2 class="shelf-label">What you will not find here</h2>
+  <p>No ebook files, and no copy of a copyrighted book. Each title links out to its Open Library work and, when there is a landing page, to Project Gutenberg. Those links leave this site.</p>
+  <h2 class="shelf-label">Where the facts come from</h2>
+  <p>The title, the author, and any year printed on a card come from the catalog record. A year is shown only when that record already has one, and never past 1928. The note under a title is a handwritten line for a featured book, or a sentence rewritten from a public description of that book, or, when no description is public, a sentence drawn from the subject headings on the bibliographic record. Notes do not carry catalog ids.</p>
+  <h2 class="shelf-label">Covers and indexing</h2>
+  <p>Cover images, when a record has one, are loaded from covers.openlibrary.org. They are not stored here. Every page sends a noindex robots tag and a relative canonical URL of <code>./</code>.</p>
+</main>
+{footer(depth)}
+"""
+    write(ROOT / "about" / "index.html", body)
+
+
 def main():
     catalog = json.loads(CATALOG.read_text())
+    check_catalog(catalog)
     assert catalog["brand"] == BRAND
     authors = {a["slug"]: a for a in catalog["authors"]}
     subjects = {s["slug"]: s for s in catalog["subjects"]}
@@ -502,7 +526,8 @@ def main():
         if not mine:
             raise SystemExit(f"empty subject {s['slug']}")
         page_subject(s, mine, authors)
-    print(f"pages: 1 home, {len(catalog['books'])} books, {len(used_authors)} authors, {len(catalog['subjects'])} subjects")
+    page_about()
+    print(f"pages: 1 home, {len(catalog['books'])} books, {len(used_authors)} authors, {len(catalog['subjects'])} subjects, about")
 
 if __name__ == "__main__":
     import sys
