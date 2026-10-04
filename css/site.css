@@ -93,6 +93,13 @@ button { font: inherit; color: inherit; }
   line-height: 1;
 }
 .brand svg { flex: none; }
+.brand-mark .bk { fill: #1A3054; }
+.brand-mark .pg { fill: #E7DFD0; }
+.brand-mark .edge { stroke: #1A3054; stroke-width: 1.6; }
+.brand-mark .rib { fill: #C04B3A; }
+:root[data-theme="dark"] .brand-mark .bk { fill: #E6EDF6; }
+:root[data-theme="dark"] .brand-mark .pg { fill: #241C16; }
+:root[data-theme="dark"] .brand-mark .edge { stroke: #E6EDF6; }
 .theme-toggle {
   display: inline-flex;
   align-items: center;

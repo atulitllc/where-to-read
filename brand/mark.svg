@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 90" fill="none">
+  <title>Where to Read</title>
+  <g fill="#1A3054">
+    <rect x="18" y="16" width="6" height="16" rx="0.6"/>
+    <rect x="26" y="8" width="5" height="24" rx="0.6"/>
+    <rect x="33" y="14" width="8" height="18" rx="0.6"/>
+    <rect x="43" y="4" width="6" height="28" rx="0.6"/>
+    <rect x="51" y="12" width="7" height="20" rx="0.6"/>
+    <rect x="60" y="18" width="5" height="14" rx="0.6"/>
+    <rect x="67" y="11" width="8" height="21" rx="0.6"/>
+  </g>
+  <rect x="14" y="32" width="68" height="14" rx="2" fill="#E7DFD0" stroke="#1A3054" stroke-width="1.6"/>
+  <rect x="14" y="38" width="68" height="8" fill="#1A3054"/>
+  <rect x="14" y="44" width="68" height="2" fill="#1A3054"/>
+  <path fill="#1A3054" d="M10 50h76v16H10z"/>
+  <path fill="#1A3054" d="M7 68h82v16H7z"/>
+  <g fill="#E7DFD0">
+    <rect x="14" y="53" width="22" height="1.6"/>
+    <rect x="60" y="53" width="22" height="1.6"/>
+    <rect x="14" y="56.5" width="22" height="1.6" opacity="0.65"/>
+    <rect x="60" y="56.5" width="22" height="1.6" opacity="0.65"/>
+    <rect x="12" y="71" width="24" height="1.6"/>
+    <rect x="60" y="71" width="24" height="1.6"/>
+    <rect x="12" y="74.5" width="24" height="1.6" opacity="0.65"/>
+    <rect x="60" y="74.5" width="24" height="1.6" opacity="0.65"/>
+  </g>
+  <path fill="#E7DFD0" d="M40 84V66a8 8 0 0 1 16 0v18z"/>
+  <path fill="#C04B3A" d="M70 36h6.5v22l-3.25-3.4L70 58z"/>
+  <g fill="#1A3054">
+    <circle cx="48" cy="68.5" r="2.7"/>
+    <rect x="45.1" y="71.6" width="5.8" height="8.2" rx="2.4"/>
+  </g>
+</svg>
