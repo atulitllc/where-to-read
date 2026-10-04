@@ -10,10 +10,39 @@ from blurb_gate import check_catalog
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "data" / "catalog.json"
 BRAND = "Where to Read"
-# Every page stays noindex while the catalog is on github.io.
+# Sitewide noindex stays on every page. Do not turn it off.
 # Empty-blurb book pages also pass thin=True, so they stay noindex on their own.
 SITEWIDE_NOINDEX = True
+# One origin for every public URL the generators emit. Apex, https, no www.
+SITE_ORIGIN = "https://booksthere.com"
 FORBIDDEN = re.compile(r"\b(pdf|epub|mobi|download|free ebook)\b", re.I)
+
+
+def absolute_url(site_path=""):
+    """Absolute apex URL, keeping the trailing slash the page already uses.
+
+    Home is https://booksthere.com/ even when the file is index.html.
+    """
+    site_path = (site_path or "").strip().strip("/")
+    if site_path == "index.html" or site_path.endswith("/index.html"):
+        site_path = site_path[: -len("index.html")].strip("/")
+    if not site_path:
+        url = SITE_ORIGIN + "/"
+    else:
+        url = f"{SITE_ORIGIN}/{site_path}/"
+    if (
+        not url.startswith(SITE_ORIGIN + "/")
+        or "github.io" in url
+        or "://www." in url
+        or url.startswith("http://")
+    ):
+        raise SystemExit(f"refusing non-apex URL {url}")
+    return url
+
+
+def json_ld(obj):
+    payload = json.dumps(obj, ensure_ascii=False).replace("<", "\\u003c")
+    return '<script type="application/ld+json">' + payload + "</script>"
 
 def has_note(book):
     return bool((book.get("blurb") or "").strip())
@@ -38,7 +67,7 @@ try {
 } catch (e) {}
 </script>"""
 
-def head(title, description, depth, extra="", thin=False):
+def head(title, description, depth, extra="", thin=False, path=""):
     prefix = "../" * depth
     # Sitewide noindex stays. An empty-blurb book page is noindex on its own,
     # so the tag remains if the sitewide flag is later turned off.
@@ -46,13 +75,15 @@ def head(title, description, depth, extra="", thin=False):
     if SITEWIDE_NOINDEX or thin:
         robots = '<meta name="robots" content="noindex">'
     thin_mark = "<!-- empty-blurb noindex -->\n" if thin else ""
+    url = absolute_url(path)
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {thin_mark}{robots}
-<link rel="canonical" href="./">
+<link rel="canonical" href="{esc(url)}">
+<meta property="og:url" content="{esc(url)}">
 <title>{esc(title)}</title>
 <meta name="description" content="{esc(description)}">
 {boot()}
@@ -207,6 +238,7 @@ def page_book(book, authors, subjects, by_author, by_subject):
     for link in same:
         if "/borrow/" in link:
             raise SystemExit(f"borrow link in sameAs for {book['slug']}")
+    page = absolute_url(f"books/{book['slug']}")
     schema = {
         "@context": "https://schema.org",
         "@type": "Book",
@@ -214,7 +246,7 @@ def page_book(book, authors, subjects, by_author, by_subject):
         "author": {
             "@type": "Person",
             "name": author["name"],
-            "url": f"{prefix}authors/{author['slug']}/",
+            "url": absolute_url(f"authors/{author['slug']}"),
         },
         "identifier": {
             "@type": "PropertyValue",
@@ -222,15 +254,18 @@ def page_book(book, authors, subjects, by_author, by_subject):
             "value": book["ol_id"],
         },
         "sameAs": same,
-        "url": "./",
+        "url": page,
     }
-    if schema["url"] == book["ol_url"] or schema["url"].startswith(("http://", "https://")):
-        raise SystemExit(f"Book.url must stay a relative catalog URL for {book['slug']}")
+    # Book.url is this catalog page on the apex. sameAs keeps the Open Library work.
+    if schema["url"] == book["ol_url"] or schema["url"] != page:
+        raise SystemExit(f"Book.url must be the apex catalog page for {book['slug']}")
+    if not schema["url"].startswith(f"{SITE_ORIGIN}/books/") or schema["author"]["url"] != absolute_url(f"authors/{author['slug']}"):
+        raise SystemExit(f"schema url left the apex for {book['slug']}")
     if book.get("year"):
         schema["datePublished"] = str(book["year"])
     if book.get("cover_i"):
         schema["image"] = f"https://covers.openlibrary.org/b/id/{book['cover_i']}-L.jpg"
-    extra = '<script type="application/ld+json">' + json.dumps(schema, ensure_ascii=False).replace("<", "\\u003c") + "</script>"
+    extra = json_ld(schema)
     same_author = pick_related(book, [b for b in by_author.get(book["author"], []) if has_note(b)])
     primary = book["subjects"][0]
     same_subject = pick_related(
@@ -254,7 +289,7 @@ def page_book(book, authors, subjects, by_author, by_subject):
         if (book.get("blurb") or "").strip()
         else ""
     )
-    body = f"""{head(title, desc, depth, extra, thin=not has_note(book))}
+    body = f"""{head(title, desc, depth, extra, thin=not has_note(book), path=f"books/{book['slug']}")}
 <body>
 {header(depth)}
 <main id="content" class="wrap detail-wrap">
@@ -303,7 +338,7 @@ def page_author(author, books, subjects):
     listed = [b for b in books if has_note(b)]
     rails = home_rails(listed, {author["slug"]: author}, subjects, prefix=prefix)
     shelf = f'<hr class="rule">\n  <div class="shelf">{rails}</div>' if listed else ""
-    body = f"""{head(title, desc, depth)}
+    body = f"""{head(title, desc, depth, path=f"authors/{author['slug']}")}
 <body>
 {header(depth)}
 <main id="content" class="wrap detail-wrap">
@@ -325,7 +360,7 @@ def page_subject(subject, books, authors, subjects):
     listed = [b for b in books if has_note(b)]
     rails = home_rails(listed, authors, subjects, prefix=prefix)
     shelf = f'<hr class="rule">\n  <div class="shelf">{rails}</div>' if listed else ""
-    body = f"""{head(title, desc, depth)}
+    body = f"""{head(title, desc, depth, path=f"subjects/{subject['slug']}")}
 <body>
 {header(depth)}
 <main id="content" class="wrap detail-wrap">
@@ -450,7 +485,15 @@ def page_home(catalog, authors, subjects):
   </section>""")
     n_books = len(books)
     n_authors = len(catalog["authors"])
-    body = f"""{head(title, desc, depth)}
+    website = {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": BRAND,
+        "url": absolute_url(""),
+    }
+    if website["url"] != SITE_ORIGIN + "/":
+        raise SystemExit("WebSite url must be the apex home URL")
+    body = f"""{head(title, desc, depth, json_ld(website), path="")}
 <body>
 {header(depth)}
 <main id="content" class="wrap">
@@ -482,7 +525,7 @@ def page_about():
     depth = 1
     title = f"About | {BRAND}"
     desc = "What this catalog is. Public-domain books, read on Open Library. This site does not host the books."
-    body = f"""{head(title, desc, depth)}
+    body = f"""{head(title, desc, depth, path="about")}
 <body>
 {header(depth)}
 <main id="content" class="wrap detail-wrap">
@@ -494,7 +537,7 @@ def page_about():
   <h2 class="shelf-label">Where the facts come from</h2>
   <p>The title, the author, and any year printed on a card come from the catalog record. A year is shown only when that record already has one, and never past 1928. A featured book keeps a handwritten note. Any other note is a sentence rewritten from a public description of that book. Where no such description was found, the card has no note: that book page is noindex on its own, and the title is left off the author and subject shelves. Notes do not carry catalog ids.</p>
   <h2 class="shelf-label">Covers and indexing</h2>
-  <p>Cover images, when a record has one, are loaded from covers.openlibrary.org. They are not stored here. Every page sends a noindex robots tag and a relative canonical URL of <code>./</code>.</p>
+  <p>Cover images, when a record has one, are loaded from covers.openlibrary.org. They are not stored here. Every page sends a noindex robots tag. Its canonical URL is the absolute address of that page on https://booksthere.com/, with the trailing slash.</p>
 </main>
 {footer(depth)}
 """
@@ -548,7 +591,58 @@ def main():
         page_subject(s, mine, authors, subjects)
     page_about()
     assert_empty_blurbs_unlinked(catalog)
+    assert_apex_urls(catalog)
     print(f"pages: 1 home, {len(catalog['books'])} books, {len(used_authors)} authors, {len(catalog['subjects'])} subjects, about")
+
+
+def assert_apex_urls(catalog):
+    """Canonical, og:url, WebSite url, and page schema url stay on the apex."""
+    canonical_re = re.compile(r'<link rel="canonical" href="([^"]*)">')
+    og_re = re.compile(r'<meta property="og:url" content="([^"]*)">')
+    schema_url_re = re.compile(r'"url": "([^"]*)"')
+    html_files = [ROOT / "index.html", ROOT / "about" / "index.html"]
+    for folder in ("books", "authors", "subjects"):
+        html_files.extend((ROOT / folder).glob("*/index.html"))
+    if not html_files:
+        raise SystemExit("no pages to check")
+    empty = {
+        b["slug"]
+        for b in catalog["books"]
+        if not (b.get("blurb") or "").strip()
+    }
+    for path in html_files:
+        rel = path.relative_to(ROOT).as_posix()
+        if rel == "index.html":
+            expected = absolute_url("")
+        elif rel.endswith("/index.html"):
+            expected = absolute_url(rel[: -len("/index.html")])
+        else:
+            raise SystemExit(f"unexpected page {rel}")
+        text = path.read_text()
+        if 'name="robots" content="noindex"' not in text:
+            raise SystemExit(f"missing noindex {rel}")
+        if rel.startswith("books/") and rel.split("/")[1] in empty:
+            if "<!-- empty-blurb noindex -->" not in text:
+                raise SystemExit(f"empty-blurb page lost its own noindex {rel}")
+        cans = canonical_re.findall(text)
+        ogs = og_re.findall(text)
+        if cans != [expected] or ogs != [expected]:
+            raise SystemExit(f"canonical/og:url mismatch in {rel}: {cans} {ogs}")
+        if 'href="./"' in text or "github.io" in text or "www.booksthere.com" in text:
+            raise SystemExit(f"relative or non-apex URL in {rel}")
+        for url in schema_url_re.findall(text):
+            if not url.startswith(SITE_ORIGIN + "/") or "github.io" in url or "://www." in url:
+                raise SystemExit(f"schema url left the apex in {rel}: {url}")
+    home = (ROOT / "index.html").read_text()
+    if f'"@type": "WebSite"' not in home or f'"url": "{SITE_ORIGIN}/"' not in home:
+        raise SystemExit("home WebSite url is not the apex")
+    pride = ROOT / "books" / "pride-and-prejudice" / "index.html"
+    pride_text = pride.read_text()
+    pride_url = absolute_url("books/pride-and-prejudice")
+    if pride_url not in pride_text or 'href="./"' in pride_text:
+        raise SystemExit("Pride and Prejudice is missing its apex URL")
+    if "<span class=\"brand-word\">books<span class=\"brand-accent\">there</span></span>" not in pride_text:
+        raise SystemExit("wordmark changed")
 
 
 def assert_empty_blurbs_unlinked(catalog):
@@ -570,7 +664,15 @@ def assert_empty_blurbs_unlinked(catalog):
     for path in hubs:
         if not path.is_file():
             continue
+        # A book page names itself in canonical, og:url, and schema url.
+        # That is not an inbound link. Any other books/slug/ still counts.
+        own = ""
+        parts = path.relative_to(ROOT).parts
+        if len(parts) == 3 and parts[0] == "books" and parts[2] == "index.html":
+            own = parts[1]
         for slug in hrefs.findall(path.read_text(errors="ignore")):
+            if slug == own:
+                continue
             if slug in empty:
                 rel = path.relative_to(ROOT)
                 raise SystemExit(f"empty-blurb book linked from {rel}: {slug}")
