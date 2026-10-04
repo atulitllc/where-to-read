@@ -519,7 +519,7 @@ def main():
         mine = [b for b in catalog["books"] if s["slug"] in b["subjects"]]
         if not mine:
             raise SystemExit(f"empty subject {s['slug']}")
-        page_subject(s, mine, authors)
+        page_subject(s, mine, authors, subjects)
     page_about()
     print(f"pages: 1 home, {len(catalog['books'])} books, {len(used_authors)} authors, {len(catalog['subjects'])} subjects, about")
 
