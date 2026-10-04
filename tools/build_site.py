@@ -239,7 +239,7 @@ def page_book(book, authors, subjects, by_author, by_subject):
     body = f"""{head(title, desc, depth, extra)}
 <body>
 {header(depth)}
-<main id="content" class="wrap">
+<main id="content" class="wrap detail-wrap">
   <nav class="crumbs" aria-label="Breadcrumb">
     <a href="{prefix}">Where to Read</a>
     <span aria-hidden="true">/</span>
@@ -248,14 +248,18 @@ def page_book(book, authors, subjects, by_author, by_subject):
     <span>{esc(book['title'])}</span>
   </nav>
   <article class="book">
-    {cover_html(book)}
-    <div>
-      <p class="kicker">Public-domain book</p>
-      <h1>{esc(book['title'])}</h1>
-      <p class="by">by <a href="{prefix}authors/{author['slug']}/">{esc(author['name'])}</a></p>
-      <p class="meta">{year}{subject_links(book, subjects, depth)}</p>
-      <p class="ol-id">Open Library {esc(book['ol_id'])}</p>
-      <p class="blurb">{esc(book['blurb'])}</p>
+    <div class="book-top">
+      <div class="book-cover">{cover_html(book)}</div>
+      <div class="book-summary">
+        <p class="kicker">Public-domain book</p>
+        <h1>{esc(book['title'])}</h1>
+        <p class="by">by <a href="{prefix}authors/{author['slug']}/">{esc(author['name'])}</a></p>
+        <p class="meta">{year}{subject_links(book, subjects, depth)}</p>
+        <p class="ol-id">Open Library {esc(book['ol_id'])}</p>
+        <p class="blurb">{esc(book['blurb'])}</p>
+      </div>
+    </div>
+    <div class="book-details">
       <p class="history">{esc(history_copy(book, author, subjects))}</p>
       <h2 class="shelf-label">About the author</h2>
       <p class="author-snippet">{esc(author['intro'])} <a href="{prefix}authors/{author['slug']}/">More of this shelf for {esc(author['name'])}</a>.</p>
@@ -289,7 +293,7 @@ def page_author(author, books, subjects):
     body = f"""{head(title, desc, depth)}
 <body>
 {header(depth)}
-<main id="content" class="wrap">
+<main id="content" class="wrap detail-wrap">
   <nav class="crumbs" aria-label="Breadcrumb"><a href="{prefix}">Where to Read</a> <span aria-hidden="true">/</span> <span>{esc(author['name'])}</span></nav>
   <p class="kicker">Author</p>
   <h1>{esc(author['name'])}</h1>
@@ -317,7 +321,7 @@ def page_subject(subject, books, authors):
     body = f"""{head(title, desc, depth)}
 <body>
 {header(depth)}
-<main id="content" class="wrap">
+<main id="content" class="wrap detail-wrap">
   <nav class="crumbs" aria-label="Breadcrumb"><a href="{prefix}">Where to Read</a> <span aria-hidden="true">/</span> <span>{esc(subject['name'])}</span></nav>
   <p class="kicker">Subject</p>
   <h1>{esc(subject['name'])}</h1>
