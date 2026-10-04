@@ -27,6 +27,13 @@
         var hay = (card.getAttribute("data-card") || "").toLowerCase();
         card.hidden = q.length > 0 && hay.indexOf(q) === -1;
       });
+      document.querySelectorAll("[data-letter]").forEach(function (block) {
+        var any = false;
+        block.querySelectorAll("[data-card]").forEach(function (card) {
+          if (!card.hidden) any = true;
+        });
+        block.hidden = q.length > 0 && !any;
+      });
     });
   });
 })();

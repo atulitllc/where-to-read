@@ -291,3 +291,38 @@ footer.colophon p { margin: 0 0 8px; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
+
+.letter-block h3 {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 1.6rem;
+  margin: 22px 0 6px;
+}
+.shelf-index { list-style: none; padding: 0; margin: 0; }
+.shelf-index li {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.shelf-index a { font-family: var(--display); font-size: 1.2rem; }
+.author-index.dense {
+  display: block;
+  columns: 3;
+  column-gap: 28px;
+}
+.author-index.dense li { break-inside: avoid; margin: 0 0 5px; }
+.author-index.dense a {
+  border: 0;
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: 1rem;
+}
+@media (max-width: 720px) {
+  .author-index.dense { columns: 1; }
+}
+
+.history { margin: 12px 0 0; }
+.author-snippet { color: var(--ink-soft); }
+.related { list-style: none; padding: 0; margin: 0 0 8px; }
+.related li { padding: 6px 0; border-bottom: 1px solid var(--rule); }
+.related a { font-family: var(--display); font-size: 1.15rem; }

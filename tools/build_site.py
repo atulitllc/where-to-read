@@ -80,8 +80,19 @@ def cover_html(book, large=False):
     alt = f"Cover of {book['title']} from Open Library"
     if book.get("cover_i"):
         src = f"https://covers.openlibrary.org/b/id/{book['cover_i']}-L.jpg"
-        return f'<img class="cover" src="{esc(src)}" alt="{esc(alt)}" width="330" height="500">'
-    return f'<div class="cover-fallback" role="img" aria-label="{esc(alt)}">{esc(book["title"])}</div>'
+    elif book.get("ol_id"):
+        src = f"https://covers.openlibrary.org/w/olid/{book['ol_id']}-L.jpg"
+    else:
+        src = None
+    fallback = f'<div class="cover-fallback" role="img" aria-label="{esc(alt)}">{esc(book["title"])}</div>'
+    if not src:
+        return fallback
+    # If Open Library has no image, the request fails and the title panel shows instead.
+    return (
+        f'<img class="cover" src="{esc(src)}" alt="{esc(alt)}" width="330" height="500" loading="lazy" '
+        f'onerror="this.onerror=null;this.hidden=true;if(this.nextElementSibling)this.nextElementSibling.hidden=false;">'
+        f'<div class="cover-fallback" hidden>{esc(book["title"])}</div>'
+    )
 
 def subject_links(book, subjects, depth):
     prefix = "../" * depth
@@ -107,7 +118,68 @@ def write(path: Path, text: str):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
 
-def page_book(book, authors, subjects):
+def pick_related(book, pool, limit=6):
+    pool = [b for b in pool if b["slug"] != book["slug"]]
+    if not pool:
+        return []
+    if len(pool) <= limit:
+        return pool
+    start = sum(ord(c) for c in book["slug"]) % len(pool)
+    return [pool[(start + i) % len(pool)] for i in range(limit)]
+
+def history_copy(book, author, subjects):
+    """Original shelf note. Facts only: title, dates, subjects. Not a copied description."""
+    title = book["title"]
+    name = author["name"]
+    kind = subjects[book["subjects"][0]]["name"].lower()
+    birth = book.get("author_birth") or author.get("birth")
+    death = book.get("author_death") or author.get("death")
+    year = book.get("year")
+    if birth and death:
+        span = f"{birth}–{death}"
+    elif death:
+        span = f"died {death}"
+    elif birth:
+        span = f"born {birth}"
+    else:
+        span = None
+    if year and span:
+        opening = f"{title} is listed with the date {year}. {name} ({span}) is the writer named on it, and the text is in the public domain in the United States."
+    elif year:
+        opening = f"The date attached to {title} in this catalog is {year}. {name} is the writer named on it, and the wording is public domain in the United States."
+    elif span:
+        opening = f"{name} ({span}) is the writer named on {title}. The book comes from that life, which is why this catalog treats the text as public domain in the United States."
+    else:
+        opening = f"{title}, by {name}, is in this catalog because the text is public domain in the United States."
+    names = [subjects[s]["name"].lower() for s in book["subjects"]]
+    if len(names) == 1:
+        filed = names[0]
+    else:
+        filed = ", ".join(names[:-1]) + f" and {names[-1]}"
+    middle = f"It is filed here as {filed}. Those words are a guide to the shelf, not a summary standing in for the book, and not a claim that one label exhausts it."
+    frames = [
+        f"The paragraph above is a catalog note written for this page. It is not a jacket blurb, and it does not replace the hours {title} asks for.",
+        f"From here the useful next step is the Open Library work, or the Project Gutenberg landing page. Neither file is stored on this site.",
+        f"Other public-domain titles by {name} are linked below when this shelf has them, and so are other books filed as {kind}.",
+        "A finding aid can give you the name, the date, and a door. The reading itself stays on Open Library.",
+    ]
+    closer = frames[sum(ord(c) for c in book["slug"]) % len(frames)]
+    return opening + " " + middle + " " + closer
+
+def related_list(items, authors, depth):
+    prefix = "../" * depth
+    lis = []
+    for b in items:
+        author = authors[b["author"]]
+        year = f" <span class=\"meta\">({b['year']})</span>" if b.get("year") else ""
+        lis.append(
+            '<li><a href="%sbooks/%s/">%s</a>%s <span class="by">· <a href="%sauthors/%s/">%s</a></span></li>' % (
+                prefix, b["slug"], esc(b["title"]), year, prefix, author["slug"], esc(author["name"])
+            )
+        )
+    return '<ul class="related">' + "".join(lis) + "</ul>"
+
+def page_book(book, authors, subjects, by_author, by_subject):
     author = authors[book["author"]]
     depth = 2
     prefix = "../../"
@@ -117,8 +189,8 @@ def page_book(book, authors, subjects):
     read_li = ""
     if book.get("read_url"):
         read_li = f'<li><a href="{esc(book["read_url"])}">Read or borrow on Open Library</a></li>'
-    # sameAs is the Open Library work and, when present, the Gutenberg landing page.
-    # Borrow links stay in the visible list only.
+    # sameAs is the Open Library work and the Gutenberg landing page only.
+    # Borrow links stay in the visible list, never in sameAs.
     same = [book["ol_url"]]
     if book.get("gutenberg_url"):
         same.append(book["gutenberg_url"])
@@ -140,7 +212,6 @@ def page_book(book, authors, subjects):
             "value": book["ol_id"],
         },
         "sameAs": same,
-        # This catalog page. No host until a real domain exists.
         "url": "./",
     }
     if schema["url"] == book["ol_url"] or schema["url"].startswith(("http://", "https://")):
@@ -150,6 +221,21 @@ def page_book(book, authors, subjects):
     if book.get("cover_i"):
         schema["image"] = f"https://covers.openlibrary.org/b/id/{book['cover_i']}-L.jpg"
     extra = '<script type="application/ld+json">' + json.dumps(schema, ensure_ascii=False).replace("<", "\\u003c") + "</script>"
+    same_author = pick_related(book, by_author.get(book["author"], []))
+    primary = book["subjects"][0]
+    same_subject = pick_related(book, [b for b in by_subject.get(primary, []) if b["author"] != book["author"]])
+    related_parts = []
+    if same_author:
+        related_parts.append(
+            f'<h2 class="shelf-label">More by {esc(author["name"])}</h2>'
+            + related_list(same_author, authors, depth)
+        )
+    if same_subject:
+        related_parts.append(
+            f'<h2 class="shelf-label">More {esc(subjects[primary]["name"].lower())}</h2>'
+            + related_list(same_subject, authors, depth)
+        )
+    related_html = "\n".join(related_parts)
     body = f"""{head(title, desc, depth, extra)}
 <body>
 {header(depth)}
@@ -170,13 +256,17 @@ def page_book(book, authors, subjects):
       <p class="meta">{year}{subject_links(book, subjects, depth)}</p>
       <p class="ol-id">Open Library {esc(book['ol_id'])}</p>
       <p class="blurb">{esc(book['blurb'])}</p>
+      <p class="history">{esc(history_copy(book, author, subjects))}</p>
+      <h2 class="shelf-label">About the author</h2>
+      <p class="author-snippet">{esc(author['intro'])} <a href="{prefix}authors/{author['slug']}/">More of this shelf for {esc(author['name'])}</a>.</p>
       <h2 class="shelf-label">Where to read it</h2>
       <ul class="where">
-        <li><a href="{esc(book['ol_url'])}">Open Library record</a></li>
+        <li><a href="{esc(book['ol_url'])}">Open Library work</a></li>
         {read_li}
         <li><a href="{esc(book['gutenberg_url'])}">Project Gutenberg page</a></li>
       </ul>
       <p class="note">Open Library hosts the reading view. Some editions open in the browser; others ask you to borrow. Project Gutenberg links in this catalog open the book’s page, not a file kept here.</p>
+      {related_html}
     </div>
   </article>
 </main>
@@ -250,8 +340,9 @@ def page_home(catalog, authors, subjects):
     author_bits = "".join(
         f'<li><a href="authors/{esc(a["slug"])}/">{esc(a["name"])}</a></li>' for a in catalog["authors"]
     )
+    featured = [b for b in books if b.get("featured") and b.get("cover_i")][:18]
     cards = []
-    for b in books:
+    for b in featured:
         author = authors[b["author"]]
         hay = esc(f"{b['title']} {author['name']}")
         year = f"{b['year']} · " if b.get("year") else ""
@@ -264,6 +355,27 @@ def page_home(catalog, authors, subjects):
           <p class="blurb">{esc(b['blurb'])}</p>
         </div>
       </article>""")
+    groups = {}
+    for b in sorted(books, key=lambda b: (b["title"].lower(), authors[b["author"]]["name"].lower())):
+        author = authors[b["author"]]
+        letter = b["title"][:1].upper()
+        if not letter.isascii() or not letter.isalnum():
+            letter = "#"
+        hay = esc(f"{b['title']} {author['name']}")
+        year = f"{b['year']} · " if b.get("year") else ""
+        groups.setdefault(letter, []).append(
+            f'<li data-card="{hay}"><a href="books/{b["slug"]}/">{esc(b["title"])}</a> '
+            f'<span class="by">· <a href="authors/{author["slug"]}/">{esc(author["name"])}</a></span> '
+            f'<span class="meta">{year}{subject_links(b, subjects, 0)}</span></li>'
+        )
+    letters = []
+    for letter in sorted(groups, key=lambda s: (s == "#", s)):
+        letters.append(
+            f'<section class="letter-block" data-letter="{esc(letter)}"><h3>{esc(letter)}</h3>'
+            f'<ul class="shelf-index">{"".join(groups[letter])}</ul></section>'
+        )
+    n_books = len(books)
+    n_authors = len(catalog["authors"])
     body = f"""{head(title, desc, depth)}
 <body>
 {header(depth)}
@@ -271,22 +383,25 @@ def page_home(catalog, authors, subjects):
   <section class="hero">
     <p class="kicker">A reading catalog</p>
     <h1>Public-domain books for a quiet evening</h1>
-    <p class="lede">A lamp-lit shelf of older books, with the reading itself on Open Library.</p>
-    <p class="fine">Where to Read keeps a catalog only. It does not host copyrighted books. Cover images are requested from Open Library when you open a page.</p>
+    <p class="lede">A lamp-lit shelf of {n_books} public-domain books by {n_authors} authors, with the reading itself on Open Library.</p>
+    <p class="fine">Where to Read keeps a catalog only. It does not host copyrighted books. Cover images are requested from Open Library when you open a book page.</p>
   </section>
   <hr class="rule">
   <h2 class="shelf-label">Subjects</h2>
   <ul class="subjects">{subject_bits}</ul>
   <hr class="rule">
-  <h2 class="shelf-label">The shelf</h2>
-  <div class="find">
-    <label for="find">Find a title or author on this page</label>
-    <input id="find" data-find type="search" placeholder="Austen, Gatsby, Douglass…">
-  </div>
+  <h2 class="shelf-label">A few to start with</h2>
   <div class="catalog">{''.join(cards)}</div>
   <hr class="rule">
+  <h2 class="shelf-label">The whole shelf</h2>
+  <div class="find">
+    <label for="find">Find a title or author on this page</label>
+    <input id="find" data-find type="search" placeholder="Austen, Douglass, a title…">
+  </div>
+  {''.join(letters)}
+  <hr class="rule">
   <h2 class="shelf-label">Authors</h2>
-  <ul class="author-index">{author_bits}</ul>
+  <ul class="author-index dense">{author_bits}</ul>
 </main>
 {footer(depth)}
 """
@@ -315,8 +430,15 @@ def main():
                 if f.is_file():
                     f.unlink()
     page_home(catalog, authors, subjects)
+    from collections import defaultdict
+    by_author = defaultdict(list)
+    by_subject = defaultdict(list)
     for b in catalog["books"]:
-        page_book(b, authors, subjects)
+        by_author[b["author"]].append(b)
+        for slug in b["subjects"]:
+            by_subject[slug].append(b)
+    for b in catalog["books"]:
+        page_book(b, authors, subjects, by_author, by_subject)
     used_authors = []
     for a in catalog["authors"]:
         mine = [b for b in catalog["books"] if b["author"] == a["slug"]]
