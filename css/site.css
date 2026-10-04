@@ -218,12 +218,14 @@ h1 {
   line-height: 1.2;
   color: var(--ink-soft);
 }
+.cover-fallback[hidden] { display: none !important; }
 .card h2, .book-list h2 {
   font-family: var(--display);
   font-size: 1.55rem;
   font-weight: 500;
   line-height: 1.15;
   margin: 2px 0 4px;
+  overflow-wrap: anywhere;
 }
 .card h2 a, .book-list h2 a { color: var(--ink); text-decoration: none; }
 .card h2 a:hover, .book-list h2 a:hover { color: var(--lamp); }

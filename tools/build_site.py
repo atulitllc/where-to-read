@@ -5,6 +5,8 @@ import json
 import re
 from pathlib import Path
 
+from blurbs import history_copy
+
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "data" / "catalog.json"
 BRAND = "Where to Read"
@@ -127,45 +129,6 @@ def pick_related(book, pool, limit=6):
     start = sum(ord(c) for c in book["slug"]) % len(pool)
     return [pool[(start + i) % len(pool)] for i in range(limit)]
 
-def history_copy(book, author, subjects):
-    """Original shelf note. Facts only: title, dates, subjects. Not a copied description."""
-    title = book["title"]
-    name = author["name"]
-    kind = subjects[book["subjects"][0]]["name"].lower()
-    birth = book.get("author_birth") or author.get("birth")
-    death = book.get("author_death") or author.get("death")
-    year = book.get("year")
-    if birth and death:
-        span = f"{birth}–{death}"
-    elif death:
-        span = f"died {death}"
-    elif birth:
-        span = f"born {birth}"
-    else:
-        span = None
-    if year and span:
-        opening = f"{title} is listed with the date {year}. {name} ({span}) is the writer named on it, and the text is in the public domain in the United States."
-    elif year:
-        opening = f"The date attached to {title} in this catalog is {year}. {name} is the writer named on it, and the wording is public domain in the United States."
-    elif span:
-        opening = f"{name} ({span}) is the writer named on {title}. The book comes from that life, which is why this catalog treats the text as public domain in the United States."
-    else:
-        opening = f"{title}, by {name}, is in this catalog because the text is public domain in the United States."
-    names = [subjects[s]["name"].lower() for s in book["subjects"]]
-    if len(names) == 1:
-        filed = names[0]
-    else:
-        filed = ", ".join(names[:-1]) + f" and {names[-1]}"
-    middle = f"It is filed here as {filed}. Those words are a guide to the shelf, not a summary standing in for the book, and not a claim that one label exhausts it."
-    frames = [
-        f"The paragraph above is a catalog note written for this page. It is not a jacket blurb, and it does not replace the hours {title} asks for.",
-        f"From here the useful next step is the Open Library work, or the Project Gutenberg landing page. Neither file is stored on this site.",
-        f"Other public-domain titles by {name} are linked below when this shelf has them, and so are other books filed as {kind}.",
-        "A finding aid can give you the name, the date, and a door. The reading itself stays on Open Library.",
-    ]
-    closer = frames[sum(ord(c) for c in book["slug"]) % len(frames)]
-    return opening + " " + middle + " " + closer
-
 def related_list(items, authors, depth):
     prefix = "../" * depth
     lis = []
@@ -285,10 +248,13 @@ def page_author(author, books, subjects):
     desc = f"Public-domain books by {author['name']} in this catalog. Read them on Open Library. This site does not host copyrighted books."
     items = []
     for b in books:
-        items.append(f"""<article>
-          <h2><a href="{prefix}books/{b['slug']}/">{esc(b['title'])}</a></h2>
-          <p class="meta">{(str(b['year']) + ' · ') if b.get('year') else ''}{subject_links(b, subjects, depth)}</p>
-          <p>{esc(b['blurb'])}</p>
+        items.append(f"""<article class="card">
+          <a href="{prefix}books/{b['slug']}/">{cover_html(b)}</a>
+          <div>
+            <h2><a href="{prefix}books/{b['slug']}/">{esc(b['title'])}</a></h2>
+            <p class="meta">{(str(b['year']) + ' · ') if b.get('year') else ''}{subject_links(b, subjects, depth)}</p>
+            <p class="blurb">{esc(b['blurb'])}</p>
+          </div>
         </article>""")
     body = f"""{head(title, desc, depth)}
 <body>
@@ -299,7 +265,7 @@ def page_author(author, books, subjects):
   <h1>{esc(author['name'])}</h1>
   <p class="lede">{esc(author['intro'])}</p>
   <hr class="rule">
-  <div class="book-list">{''.join(items)}</div>
+  <div class="catalog">{''.join(items)}</div>
 </main>
 {footer(depth)}
 """
@@ -313,10 +279,13 @@ def page_subject(subject, books, authors):
     items = []
     for b in books:
         author = authors[b["author"]]
-        items.append(f"""<article>
-          <h2><a href="{prefix}books/{b['slug']}/">{esc(b['title'])}</a></h2>
-          <p class="by">by <a href="{prefix}authors/{author['slug']}/">{esc(author['name'])}</a></p>
-          <p>{esc(b['blurb'])}</p>
+        items.append(f"""<article class="card">
+          <a href="{prefix}books/{b['slug']}/">{cover_html(b)}</a>
+          <div>
+            <h2><a href="{prefix}books/{b['slug']}/">{esc(b['title'])}</a></h2>
+            <p class="by">by <a href="{prefix}authors/{author['slug']}/">{esc(author['name'])}</a></p>
+            <p class="blurb">{esc(b['blurb'])}</p>
+          </div>
         </article>""")
     body = f"""{head(title, desc, depth)}
 <body>
@@ -327,7 +296,7 @@ def page_subject(subject, books, authors):
   <h1>{esc(subject['name'])}</h1>
   <p class="lede">{esc(subject['intro'])}</p>
   <hr class="rule">
-  <div class="book-list">{''.join(items)}</div>
+  <div class="catalog">{''.join(items)}</div>
 </main>
 {footer(depth)}
 """

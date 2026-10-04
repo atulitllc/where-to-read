@@ -16,6 +16,8 @@ import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
+from blurbs import make_blurb
+
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "data" / "catalog.json"
 PG_PATH = ROOT / "data" / "pg_catalog.csv"
@@ -172,23 +174,6 @@ def subjects_for(row):
     return found or ["literature"]
 
 
-BLURBS = [
-    "{title} is listed here as a public-domain {kind} by {author}. The sentences on this card were written for the catalog: they name the book and the shelf, and they leave the plot for the text itself. The Open Library work is where the reading happens.",
-    "{author}’s {title} sits on this shelf as a public-domain {kind}. Treat the note as a finding aid, not as a jacket summary and not as a substitute for the book. Follow the Open Library work rather than expecting a copy stored on this site.",
-    "This catalog card is for {title}, a public-domain {kind} under the name {author}. The history beside it is only dates, subjects, and a door. Open Library holds the reading view.",
-    "{title} belongs with the public-domain {kind} of {author}. Nothing here retells the chapters. Use the links to reach the Open Library work and the Project Gutenberg page for the book.",
-    "A shelf note for {title}. {author} is the writer named on it, the wording is in the public domain, and the book itself stays on Open Library. What follows is context for the catalog, not a digest of the story.",
-    "{title}, a public-domain {kind} by {author}, is gathered here as a finding aid. The page adds the date when we have one, the subjects we filed it under, and a short note on the author. The next page you want is the Open Library work.",
-]
-
-
-def make_blurb(title, author, kind, slug):
-    frame = BLURBS[sum(ord(c) for c in slug) % len(BLURBS)]
-    text = frame.format(title=title, author=author, kind=kind)
-    if FORBIDDEN.search(text):
-        raise SystemExit(f"blurb tripped filter: {text}")
-    return text
-
 
 def author_intro(name, birth, death, titles):
     if birth and death:
@@ -307,6 +292,11 @@ def main():
             if people:
                 rec["author_birth"] = people[0][1]
                 rec["author_death"] = people[0][2]
+        if rec.get("year") == 1800:
+            rec["year"] = None
+        # Handwritten blurbs are the original featured set. Everything else is regenerated.
+        if not b.get("featured"):
+            rec["blurb"] = make_blurb(rec, subject_names)
         chosen.append(rec)
 
     for b in existing["books"]:
@@ -340,7 +330,6 @@ def main():
         if not re.fullmatch(r"OL\d+W", ol_id):
             continue
         subs = subjects_for(row)
-        kind = subject_names[subs[0]].lower()
         slug = slugify(title)
         if ol_id.lower() in slug:
             slug = slug.replace(ol_id.lower(), "").strip("-") or slugify(title)
@@ -353,7 +342,7 @@ def main():
             "year": None,
             "gutenberg": int(pg),
             "subjects": subs,
-            "blurb": make_blurb(title, name, kind, slug or title),
+            "blurb": "",
             "author_name": name,
             "author_birth": birth,
             "author_death": death,
@@ -371,9 +360,12 @@ def main():
         if m and 1400 <= int(m.group(1)) <= 1928:
             book["year"] = int(m.group(1))
         if not book["year"]:
-            years = [r.get("year") for r in by_pg[pg] if isinstance(r.get("year"), int) and 1400 <= r["year"] <= 1928]
+            years = [r.get("year") for r in by_pg[pg] if isinstance(r.get("year"), int) and 1400 <= r["year"] <= 1928 and r["year"] != 1800]
             if years:
                 book["year"] = max(set(years), key=years.count)
+        if book.get("year") == 1800:
+            book["year"] = None
+        book["blurb"] = make_blurb(book, subject_names)
         chosen.append(book)
         seen_pg.add(pg)
 
