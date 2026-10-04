@@ -12,7 +12,8 @@ CATALOG = ROOT / "data" / "catalog.json"
 BRAND = "Where to Read"
 # Sitewide noindex is off. The catalog is served at the booksthere.com apex.
 # Empty-blurb book pages still pass thin=True and keep their own robots noindex.
-# Do not drop that per-page tag, and do not list those URLs in the sitemap.
+# Author pages that link no noted book pass noindex=True and keep their own tag.
+# Do not drop those per-page tags, and do not list those URLs in the sitemap.
 SITEWIDE_NOINDEX = False
 # One origin for every public URL the generators emit. Apex, https, no www.
 SITE_ORIGIN = "https://booksthere.com"
@@ -48,6 +49,26 @@ def json_ld(obj):
 def has_note(book):
     return bool((book.get("blurb") or "").strip())
 
+def books_by_author(catalog):
+    grouped = {}
+    for book in catalog["books"]:
+        grouped.setdefault(book["author"], []).append(book)
+    return grouped
+
+def author_has_noted_book(author_slug, grouped):
+    """True when this author links at least one book that has a note."""
+    return any(has_note(book) for book in grouped.get(author_slug, []))
+
+def empty_author_slugs(catalog, grouped=None):
+    """Author pages that exist and link zero books with a note."""
+    if grouped is None:
+        grouped = books_by_author(catalog)
+    return {
+        author["slug"]
+        for author in catalog["authors"]
+        if grouped.get(author["slug"]) and not author_has_noted_book(author["slug"], grouped)
+    }
+
 def esc(s):
     return html.escape(s if s is not None else "", quote=True)
 
@@ -68,14 +89,16 @@ try {
 } catch (e) {}
 </script>"""
 
-def head(title, description, depth, extra="", thin=False, path=""):
+def head(title, description, depth, extra="", thin=False, path="", noindex=False):
     prefix = "../" * depth
-    # Sitewide noindex is off. An empty-blurb book page is noindex on its own,
-    # so the tag remains on that thin page after the sitewide flag is turned off.
+    # Sitewide noindex is off. An empty-blurb book page, and an author page
+    # that links no noted book, each stay noindex on their own.
     meta_bits = []
     if thin:
         meta_bits.append("<!-- empty-blurb noindex -->")
-    if SITEWIDE_NOINDEX or thin:
+    elif noindex:
+        meta_bits.append("<!-- empty-author noindex -->")
+    if SITEWIDE_NOINDEX or thin or noindex:
         meta_bits.append('<meta name="robots" content="noindex">')
     meta_block = ("\n".join(meta_bits) + "\n") if meta_bits else ""
     url = absolute_url(path)
@@ -340,7 +363,8 @@ def page_author(author, books, subjects):
     listed = [b for b in books if has_note(b)]
     rails = home_rails(listed, {author["slug"]: author}, subjects, prefix=prefix)
     shelf = f'<hr class="rule">\n  <div class="shelf">{rails}</div>' if listed else ""
-    body = f"""{head(title, desc, depth, path=f"authors/{author['slug']}")}
+    # No noted book on this shelf: the page stays, but it is noindex and out of the sitemap.
+    body = f"""{head(title, desc, depth, path=f"authors/{author['slug']}", noindex=not listed)}
 <body>
 {header(depth)}
 <main id="content" class="wrap detail-wrap">
@@ -539,7 +563,7 @@ def page_about():
   <h2 class="shelf-label">Where the facts come from</h2>
   <p>The title, the author, and any year printed on a card come from the catalog record. A year is shown only when that record already has one, and never past 1928. A featured book keeps a handwritten note. Any other note is a sentence rewritten from a public description of that book. Where no such description was found, the card has no note: that book page is noindex on its own, and the title is left off the author and subject shelves. Notes do not carry catalog ids.</p>
   <h2 class="shelf-label">Covers and indexing</h2>
-  <p>Cover images, when a record has one, are loaded from covers.openlibrary.org. They are not stored here. A book page with no note sends its own noindex robots tag. Every other page is open to indexing. Each canonical URL is the absolute address of that page on https://booksthere.com/, with the trailing slash. The sitemap lists those indexable addresses and leaves the empty-note book pages out.</p>
+  <p>Cover images, when a record has one, are loaded from covers.openlibrary.org. They are not stored here. A book page with no note sends its own noindex robots tag. An author page that lists no book with a note does the same. Home, about, the subject pages, book pages that have a note, and author pages that list one stay open to indexing. Each canonical URL is the absolute address of that page on https://booksthere.com/, with the trailing slash. The sitemap lists those indexable addresses and leaves the empty-note book pages and the empty author pages out.</p>
 </main>
 {footer(depth)}
 """
@@ -547,15 +571,17 @@ def page_about():
 
 
 def indexable_paths(catalog, used_authors):
-    """Home, about, every author and subject hub, and book pages that have a note.
+    """Home, about, subject hubs, authors who link a noted book, and books with a note.
 
-    Empty-blurb book URLs are indexable nowhere: they stay noindex and stay out.
+    Empty-blurb book URLs and author pages with no noted book stay noindex and stay out.
     """
+    grouped = books_by_author(catalog)
     paths = ["", "about"]
     for subject in catalog["subjects"]:
         paths.append(f"subjects/{subject['slug']}")
     for author in used_authors:
-        paths.append(f"authors/{author['slug']}")
+        if author_has_noted_book(author["slug"], grouped):
+            paths.append(f"authors/{author['slug']}")
     for book in catalog["books"]:
         if has_note(book):
             paths.append(f"books/{book['slug']}")
@@ -637,16 +663,21 @@ def main():
     paths = indexable_paths(catalog, used_authors)
     write_sitemap(paths)
     assert_empty_blurbs_unlinked(catalog)
+    assert_empty_authors_unlinked(catalog)
     assert_apex_urls(catalog)
     n_empty = sum(1 for b in catalog["books"] if not has_note(b))
     n_noted = len(catalog["books"]) - n_empty
+    n_empty_authors = len(empty_author_slugs(catalog, by_author))
+    n_kept_authors = len(used_authors) - n_empty_authors
     print(
         f"pages: 1 home, {len(catalog['books'])} books, {len(used_authors)} authors, "
         f"{len(catalog['subjects'])} subjects, about"
     )
     print(
         f"sitemap: {len(paths)} indexable urls; books with notes {n_noted}; "
-        f"empty-blurb books excluded {n_empty}"
+        f"empty-blurb books excluded {n_empty}; "
+        f"authors with a noted book {n_kept_authors}; "
+        f"empty authors excluded {n_empty_authors}"
     )
 
 
@@ -660,11 +691,13 @@ def assert_apex_urls(catalog):
         html_files.extend((ROOT / folder).glob("*/index.html"))
     if not html_files:
         raise SystemExit("no pages to check")
+    grouped = books_by_author(catalog)
     empty = {
         b["slug"]
         for b in catalog["books"]
         if not (b.get("blurb") or "").strip()
     }
+    empty_authors = empty_author_slugs(catalog, grouped)
     for path in html_files:
         rel = path.relative_to(ROOT).as_posix()
         if rel == "index.html":
@@ -674,15 +707,28 @@ def assert_apex_urls(catalog):
         else:
             raise SystemExit(f"unexpected page {rel}")
         text = path.read_text()
-        is_empty_book = rel.startswith("books/") and rel.split("/")[1] in empty
+        parts = rel.split("/")
+        is_empty_book = rel.startswith("books/") and parts[1] in empty
+        is_empty_author = rel.startswith("authors/") and parts[1] in empty_authors
         has_robots = 'name="robots" content="noindex"' in text
         has_thin_mark = "<!-- empty-blurb noindex -->" in text
+        has_author_mark = "<!-- empty-author noindex -->" in text
         if is_empty_book:
-            if not has_robots or not has_thin_mark:
+            if not has_robots or not has_thin_mark or has_author_mark:
                 raise SystemExit(f"empty-blurb page lost its own noindex {rel}")
+        elif is_empty_author:
+            if not has_robots or not has_author_mark or has_thin_mark:
+                raise SystemExit(f"empty-author page lost its own noindex {rel}")
+            if re.search(r"books/[a-z0-9-]+/", text):
+                raise SystemExit(f"empty-author page links a book {rel}")
         else:
-            if has_robots or has_thin_mark:
+            if has_robots or has_thin_mark or has_author_mark:
                 raise SystemExit(f"indexable page still noindex {rel}")
+            if rel.startswith("authors/"):
+                noted = [b["slug"] for b in grouped.get(parts[1], []) if has_note(b)]
+                linked = re.findall(r"books/([a-z0-9-]+)/", text)
+                if not noted or any(slug not in linked for slug in noted):
+                    raise SystemExit(f"indexable author page does not link its noted books {rel}")
         if SITEWIDE_NOINDEX:
             raise SystemExit("sitewide noindex is still on")
         cans = canonical_re.findall(text)
@@ -727,14 +773,23 @@ def assert_sitemap(catalog, empty):
         raise SystemExit("sitemap loc left https")
     if len(locs) != len(set(locs)):
         raise SystemExit("duplicate sitemap urls")
+    grouped = books_by_author(catalog)
+    empty_authors = empty_author_slugs(catalog, grouped)
     expected = set()
     expected.add(absolute_url(""))
     expected.add(absolute_url("about"))
     for subject in catalog["subjects"]:
         expected.add(absolute_url(f"subjects/{subject['slug']}"))
+    kept_authors = 0
     for author in catalog["authors"]:
-        # page_author skips an author with no books. Every catalog author has one.
-        expected.add(absolute_url(f"authors/{author['slug']}"))
+        url = absolute_url(f"authors/{author['slug']}")
+        # No page when the author has no books. A page with no noted book stays out.
+        if author["slug"] in empty_authors or not grouped.get(author["slug"]):
+            if url in locs:
+                raise SystemExit(f"empty-author page in sitemap: {author['slug']}")
+            continue
+        kept_authors += 1
+        expected.add(url)
     noted = 0
     for book in catalog["books"]:
         url = absolute_url(f"books/{book['slug']}")
@@ -753,6 +808,8 @@ def assert_sitemap(catalog, empty):
         raise SystemExit("Pride and Prejudice missing from sitemap")
     if noted + len(empty) != len(catalog["books"]):
         raise SystemExit("note/empty split does not cover the catalog")
+    if kept_authors + len(empty_authors) != len(catalog["authors"]):
+        raise SystemExit("author note split does not cover the catalog")
     for url in locs:
         if not url.startswith(SITE_ORIGIN + "/") or not url.endswith("/"):
             raise SystemExit(f"sitemap url is not an apex path {url}")
@@ -789,6 +846,35 @@ def assert_empty_blurbs_unlinked(catalog):
             if slug in empty:
                 rel = path.relative_to(ROOT)
                 raise SystemExit(f"empty-blurb book linked from {rel}: {slug}")
+
+
+def assert_empty_authors_unlinked(catalog):
+    """Fail if a hub, noted page, or the sitemap links an author with no noted book.
+
+    The author page stays on disk. An empty-blurb book page may still name its author.
+    Search lists noted titles only and does not link author pages.
+    """
+    grouped = books_by_author(catalog)
+    empty_authors = empty_author_slugs(catalog, grouped)
+    search = (ROOT / "search.json").read_text()
+    if "authors/" in search:
+        raise SystemExit("search.json links an author page")
+    hrefs = re.compile(r"authors/([a-z0-9-]+)/")
+    pages = [ROOT / "index.html", ROOT / "about" / "index.html", ROOT / "sitemap.xml"]
+    pages.extend((ROOT / "subjects").glob("*/index.html"))
+    for book in catalog["books"]:
+        if has_note(book):
+            pages.append(ROOT / "books" / book["slug"] / "index.html")
+    for author in catalog["authors"]:
+        if grouped.get(author["slug"]) and author["slug"] not in empty_authors:
+            pages.append(ROOT / "authors" / author["slug"] / "index.html")
+    for path in pages:
+        if not path.is_file():
+            raise SystemExit(f"missing page while checking author links: {path}")
+        for slug in hrefs.findall(path.read_text(errors="ignore")):
+            if slug in empty_authors:
+                rel = path.relative_to(ROOT)
+                raise SystemExit(f"empty author linked from {rel}: {slug}")
 
 if __name__ == "__main__":
     import sys
