@@ -87,7 +87,7 @@ def brand_svg():
   <path class="rib" d="M70 36h6.5v22l-3.25-3.4L70 58z"/>
 </svg>"""
 
-# Header wordmark is permanently "booksthere" (no .com), slightly condensed. Do not change it back to "Where to Read".
+# Header wordmark is permanently "booksthere" (no .com). Do not change it back to "Where to Read", and do not scale it horizontally.
 # Page titles still say Where to Read. The doorway mark stays.
 def header(depth):
     prefix = "../" * depth
@@ -435,10 +435,8 @@ def page_home(catalog, authors, subjects):
 {header(depth)}
 <main id="content" class="wrap">
   <section class="hero">
-    <p class="kicker">A reading catalog</p>
-    <h1>Public-domain books for a quiet evening</h1>
-    <p class="lede">A lamp-lit shelf of {n_books} public-domain books by {n_authors} authors, with the reading itself on Open Library.</p>
-    <p class="fine">Where to Read keeps a catalog only. It does not host copyrighted books. This page is a short set of shelves. Each subject page lists that part of the catalog.</p>
+    <h1>Public-domain books</h1>
+    <p class="lede">{n_books} public-domain books by {n_authors} authors. Open Library. Browse only.</p>
   </section>
   <div class="find">
     <label for="find">Search the catalog</label>
