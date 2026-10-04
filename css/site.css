@@ -91,19 +91,19 @@ button { font: inherit; color: inherit; }
   text-decoration: none;
   font-family: var(--display);
   font-size: 1.55rem;
-  font-stretch: extra-condensed;
+  font-stretch: normal;
   font-weight: 600;
-  letter-spacing: -0.06em;
+  letter-spacing: -0.02em;
   line-height: 1;
 }
 .brand-word {
   display: inline-block;
   font-size: clamp(1.25rem, 2.7vw, 1.55rem);
-  width: 2.45em;
-  font-stretch: extra-condensed;
-  letter-spacing: -0.08em;
+  width: 3.1em;
+  font-stretch: normal;
+  letter-spacing: -0.04em;
   white-space: nowrap;
-  transform: scaleX(0.62);
+  transform: scaleX(0.78);
   transform-origin: left center;
 }
 .brand svg { flex: none; }

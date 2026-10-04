@@ -18,7 +18,7 @@ Option B: books stacked into a doorway, a small reader in the arch, a skyline of
 | Accent | `#C04B3A` | “there”, bookmark red |
 | Paper (recommended ground) | `#F6F1E7` | Preview only; SVGs are transparent |
 
-Wordmark is the domain name `booksthere` (no .com), extra-condensed so the lockup stays short. Set in EB Garamond, squeezed on the horizontal. The book-doorway mark is unchanged. The light header sits on warm off-white `#F4EFE4`.
+Wordmark is the domain name `booksthere` (no .com), slightly condensed so the lockup stays compact. Set in EB Garamond with a relaxed horizontal proportion. The book-doorway mark is unchanged. The light header sits on warm off-white `#F4EFE4`.
 
 On the live header the book ink follows the theme (navy on paper, pale on the night lamp) so the arch still reads. The bookmark stays `#C04B3A`.
 
